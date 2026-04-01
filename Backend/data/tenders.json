@@ -1,0 +1,121 @@
+[
+  {
+    "id": "GEM-2024-IT-001",
+    "title": "IT Consulting Services for Digital Transformation",
+    "department": "Ministry of Electronics and IT",
+    "value": "₹45,00,000",
+    "deadline": "2026-05-20",
+    "category": "IT Services",
+    "location": "Pan-India",
+    "requirements": {
+      "min_turnover": 2000000,
+      "min_years": 3,
+      "certifications": ["ISO 9001"],
+      "past_order_value": 1000000,
+      "msme_only": false,
+      "emd_required": false,
+      "emd_amount": 0
+    },
+    "penalty_clauses": [
+      "10% penalty for delays beyond 30 days",
+      "Contract termination after 60 days of non-performance"
+    ],
+    "payment_terms": "45 days after delivery and acceptance",
+    "full_text": "This tender is for providing IT consulting services for digital transformation. Eligibility: Minimum annual turnover of Rs 20 lakhs for last 3 financial years. ISO 9001 certification preferred. Past experience of at least one similar project worth Rs 10 lakhs required. MSME bidders get 15% price preference. EMD exempted for MSMEs. The selected vendor must deploy a team of minimum 5 IT professionals."
+  },
+  {
+    "id": "GEM-2024-IT-002",
+    "title": "Website Development and Maintenance Services",
+    "department": "Ministry of Agriculture",
+    "value": "₹12,00,000",
+    "deadline": "2026-05-25",
+    "category": "IT Services",
+    "location": "Delhi",
+    "requirements": {
+      "min_turnover": 500000,
+      "min_years": 1,
+      "certifications": [],
+      "past_order_value": 200000,
+      "msme_only": true,
+      "emd_required": false,
+      "emd_amount": 0
+    },
+    "penalty_clauses": [
+      "5% penalty for each week of delay",
+      "Full refund if website not delivered within 90 days"
+    ],
+    "payment_terms": "30 days after milestone completion",
+    "full_text": "Website development and maintenance for agricultural information portal. Only MSME registered vendors are eligible. Minimum turnover Rs 5 lakhs. 1 year in operation required. No certification required. Past experience of Rs 2 lakhs minimum. The website must be mobile responsive and support Hindi and English languages."
+  },
+  {
+    "id": "GEM-2024-IT-003",
+    "title": "Cloud Infrastructure Management Services",
+    "department": "Ministry of Finance",
+    "value": "₹28,00,000",
+    "deadline": "2026-06-01",
+    "category": "IT Services",
+    "location": "Pan-India",
+    "requirements": {
+      "min_turnover": 5000000,
+      "min_years": 5,
+      "certifications": ["ISO 9001", "ISO 27001"],
+      "past_order_value": 2000000,
+      "msme_only": false,
+      "emd_required": true,
+      "emd_amount": 50000
+    },
+    "penalty_clauses": [
+      "15% penalty for SLA breach",
+      "2% per day for critical downtime beyond 4 hours"
+    ],
+    "payment_terms": "Monthly billing, payment within 30 days",
+    "full_text": "Cloud infrastructure management for financial systems. Minimum turnover Rs 50 lakhs. 5 years in operation. ISO 9001 and ISO 27001 mandatory. Past order value Rs 20 lakhs minimum. EMD of Rs 50,000 required. MSME exempted from EMD. Vendor must have 24x7 support capability and dedicated account manager."
+  },
+  {
+    "id": "GEM-2024-IT-004",
+    "title": "Mobile App Development for Farmer Portal",
+    "department": "Ministry of Agriculture",
+    "value": "₹8,00,000",
+    "deadline": "2026-05-15",
+    "category": "IT Services",
+    "location": "Pan-India",
+    "requirements": {
+      "min_turnover": 300000,
+      "min_years": 1,
+      "certifications": [],
+      "past_order_value": 100000,
+      "msme_only": true,
+      "emd_required": false,
+      "emd_amount": 0
+    },
+    "penalty_clauses": [
+      "10% penalty for delay beyond deadline"
+    ],
+    "payment_terms": "50% on delivery, 50% after 3 months of successful operation",
+    "full_text": "Mobile application development for farmer information portal supporting Android and iOS. MSME only tender. Minimum turnover Rs 3 lakhs. 1 year experience. App must support offline mode and regional languages. Past experience of Rs 1 lakh minimum."
+  },
+  {
+    "id": "GEM-2024-IT-005",
+    "title": "Cybersecurity Audit and Compliance Services",
+    "department": "Ministry of Home Affairs",
+    "value": "₹35,00,000",
+    "deadline": "2026-06-10",
+    "category": "IT Services",
+    "location": "Delhi",
+    "requirements": {
+      "min_turnover": 10000000,
+      "min_years": 7,
+      "certifications": ["ISO 27001", "CERT-In Empanelled"],
+      "past_order_value": 5000000,
+      "msme_only": false,
+      "emd_required": true,
+      "emd_amount": 100000
+    },
+    "penalty_clauses": [
+      "20% penalty for data breach during audit",
+      "Contract cancellation for confidentiality breach"
+    ],
+    "payment_terms": "Quarterly payments after milestone completion",
+    "full_text": "Comprehensive cybersecurity audit for government systems. Minimum turnover Rs 1 crore. 7 years experience mandatory. ISO 27001 and CERT-In empanelment required. Past order value Rs 50 lakhs minimum. EMD Rs 1 lakh required, MSME exempted. Security clearance required for team members."
+  }
+]
