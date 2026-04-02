@@ -1,21 +1,18 @@
 /**
- * Mock API layer — mirrors the real backend contract at http://localhost:3001
+ * API layer — wired to the real backend at http://localhost:3001
  *
  * Endpoint mapping:
  *   uploadProfile()               → POST  /api/profile
+ *   getProfile()                  → GET   /api/profile/:profile_id
  *   getTenders(profileId)         → GET   /api/tenders/:profile_id
- *   getTenderById(id)             → client-side lookup (no dedicated endpoint)
+ *   getTenderById(id)             → GET   /api/tenders/detail/:id
+ *   getTenderDetails(id)          → client-side lookup (extended mock data)
  *   checkEligibility(pid, tid)    → POST  /api/eligibility
  *   generateBid(pid, tid)         → POST  /api/bid
- *
- * Swap these implementations for real fetch() calls when the backend is ready.
  */
 
 import {
-  MOCK_PROFILE_RESPONSE,
   MOCK_TENDERS,
-  MOCK_ELIGIBILITY,
-  MOCK_BID,
   MOCK_TENDER_DETAILS,
 } from '@/lib/mockData';
 import type {
@@ -28,87 +25,127 @@ import type {
   Bid,
 } from '@/types';
 
-// Simulate network latency
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
+const PROFILE_ID_KEY = 'gem_profile_id';
+
+export function getProfileId(): string {
+  if (typeof window === 'undefined') return '';
+  return localStorage.getItem(PROFILE_ID_KEY) || '';
 }
+
+function setProfileId(id: string) {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(PROFILE_ID_KEY, id);
+  }
+}
+
+// Keep for backward compat — pages that still import MOCK_PROFILE_ID at module
+// level will get an empty string on first load; use getProfileId() in effects.
+export const MOCK_PROFILE_ID = '';
 
 // Saved tenders stored in memory (simulates session state)
 const savedTenderIds = new Set<string>();
 
-// ─── Client-side profile getter (no GET /api/profile in contract) ────────────
-// Returns the stored profile from session. Replace with local state or
-// a session endpoint when the backend is ready.
-export async function getProfile(): Promise<ProfileResponse> {
-  await delay(600);
-  return MOCK_PROFILE_RESPONSE as ProfileResponse;
+// ─── POST /api/profile ────────────────────────────────────────────────────────
+export async function uploadProfile(
+  payload: ProfileUploadPayload
+): Promise<ProfileResponse> {
+  const form = new FormData();
+  form.append('company_name', payload.company_name);
+  form.append('category', payload.category);
+  form.append('turnover', String(payload.turnover));
+  form.append('years_in_operation', String(payload.years_in_operation));
+
+  if (payload.certifications?.length) {
+    form.append('certifications', JSON.stringify(payload.certifications));
+  }
+  if (payload.udyam) form.append('udyam', payload.udyam);
+  if (payload.gst) form.append('gst', payload.gst);
+
+  const res = await fetch(`${API_BASE}/api/profile`, { method: 'POST', body: form });
+  if (!res.ok) throw new Error(`Profile upload failed: ${res.status}`);
+  const data: ProfileResponse = await res.json();
+  setProfileId(data.profile_id);
+  return data;
 }
 
-// ─── POST /api/profile ────────────────────────────────────────────────────────
-// In production: build a FormData and POST to /api/profile
-export async function uploadProfile(
-  _payload: ProfileUploadPayload
-): Promise<ProfileResponse> {
-  await delay(1200);
-  return MOCK_PROFILE_RESPONSE as ProfileResponse;
+// ─── GET /api/profile/:profile_id ────────────────────────────────────────────
+export async function getProfile(): Promise<ProfileResponse> {
+  const profileId = getProfileId();
+  if (!profileId) throw new Error('No profile found. Please complete onboarding.');
+  const res = await fetch(`${API_BASE}/api/profile/${profileId}`);
+  if (!res.ok) throw new Error(`Profile fetch failed: ${res.status}`);
+  return res.json();
 }
 
 // ─── GET /api/tenders/:profile_id ────────────────────────────────────────────
 export async function getTenders(
-  _profileId: string
+  profileId: string
 ): Promise<TendersResponse> {
-  await delay(800);
-  return MOCK_TENDERS as TendersResponse;
+  const id = profileId || getProfileId();
+  if (!id) return MOCK_TENDERS as TendersResponse;
+  const res = await fetch(`${API_BASE}/api/tenders/${id}`);
+  if (!res.ok) throw new Error(`Tenders fetch failed: ${res.status}`);
+  return res.json();
 }
 
-// Client-side lookup — no dedicated backend endpoint
+// ─── GET /api/tenders/detail/:id ─────────────────────────────────────────────
 export async function getTenderById(id: string): Promise<Tender | null> {
-  await delay(500);
-  const tender = MOCK_TENDERS.tenders.find((t) => t.id === id);
-  return tender ?? null;
+  const res = await fetch(`${API_BASE}/api/tenders/detail/${id}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Tender fetch failed: ${res.status}`);
+  return res.json();
 }
 
-// Client-side extended detail lookup — no dedicated backend endpoint yet
-// Wire to GET /api/tenders/:id when available
+// Client-side extended detail — no dedicated backend endpoint yet
 export async function getTenderDetails(id: string): Promise<TenderDetails | null> {
-  await delay(400);
   const details = MOCK_TENDER_DETAILS[id as keyof typeof MOCK_TENDER_DETAILS];
   return (details as TenderDetails) ?? null;
 }
 
 // ─── POST /api/eligibility  { profile_id, tender_id } ────────────────────────
 export async function checkEligibility(
-  _profileId: string,
-  _tenderId: string
+  profileId: string,
+  tenderId: string
 ): Promise<Eligibility> {
-  await delay(900);
-  return MOCK_ELIGIBILITY as Eligibility;
+  const id = profileId || getProfileId();
+  const res = await fetch(`${API_BASE}/api/eligibility`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profile_id: id, tender_id: tenderId }),
+  });
+  if (!res.ok) throw new Error(`Eligibility check failed: ${res.status}`);
+  return res.json();
 }
 
 // ─── POST /api/bid  { profile_id, tender_id } ────────────────────────────────
 export async function generateBid(
-  _profileId: string,
-  _tenderId: string
+  profileId: string,
+  tenderId: string
 ): Promise<Bid> {
-  await delay(700);
-  return MOCK_BID as Bid;
+  const id = profileId || getProfileId();
+  const res = await fetch(`${API_BASE}/api/bid`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profile_id: id, tender_id: tenderId }),
+  });
+  if (!res.ok) throw new Error(`Bid generation failed: ${res.status}`);
+  return res.json();
 }
 
-// ─── Client-side save/unsave (no backend endpoint in contract) ────────────────
+// ─── Client-side save/unsave ──────────────────────────────────────────────────
 export async function saveTender(id: string): Promise<{ success: boolean }> {
-  await delay(300);
   savedTenderIds.add(id);
   return { success: true };
 }
 
 export async function unsaveTender(id: string): Promise<{ success: boolean }> {
-  await delay(300);
   savedTenderIds.delete(id);
   return { success: true };
 }
 
 export async function getSavedTenders(): Promise<TendersResponse> {
-  await delay(600);
   const tenders = MOCK_TENDERS.tenders.filter((t) => savedTenderIds.has(t.id));
   return { tenders };
 }
@@ -116,6 +153,3 @@ export async function getSavedTenders(): Promise<TendersResponse> {
 export function isTenderSaved(id: string): boolean {
   return savedTenderIds.has(id);
 }
-
-// Expose the mock profile_id so pages can pass it to contract-aligned calls
-export const MOCK_PROFILE_ID = MOCK_PROFILE_RESPONSE.profile_id;

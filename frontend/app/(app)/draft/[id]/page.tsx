@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { getTenderById, generateBid, getProfile, MOCK_PROFILE_ID } from '@/lib/mockApi';
+import { getTenderById, generateBid, getProfile, getProfileId } from '@/lib/mockApi';
 import { formatDate } from '@/lib/utils';
 import type { Tender, Bid, ChecklistItem, TeamMember, PastProject, ScopeMappingRow, TimelineRow, ComplianceMatrixRow, Profile } from '@/types';
 
@@ -429,12 +429,12 @@ export default function DraftBidPage() {
     if (!id) return;
     Promise.all([
       getTenderById(id),
-      generateBid(MOCK_PROFILE_ID, id),
-      getProfile(),
+      generateBid(getProfileId(), id),
+      getProfile().catch(() => null),
     ]).then(([t, b, p]) => {
       setTender(t);
       setBid(b);
-      setProfile(p.profile);
+      setProfile(p?.profile ?? null);
       const initial = {
         cover_letter: b.cover_letter ?? '',
         executive_summary: b.executive_summary ?? '',

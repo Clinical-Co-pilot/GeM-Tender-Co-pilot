@@ -109,7 +109,7 @@ export default function OnboardingPage() {
       category: formData.category,
       turnover: Number(formData.turnover) || 0,
       years_in_operation: Number(formData.years_in_operation) || 0,
-      // Real File objects when selected; null if not uploaded yet
+      certifications: formData.certifications,
       udyam: docFiles['udyam'] ?? null,
       gst: docFiles['gst'] ?? null,
     };

@@ -172,13 +172,12 @@ export interface TenderDetails {
 }
 
 // Payload for POST /api/profile (multipart/form-data)
-// udyam and gst are the only file fields in the contract.
-// pan, itr, iso, experience are frontend-only UX fields — not sent to backend.
 export interface ProfileUploadPayload {
   company_name: string;
   category: string;
   turnover: number;
   years_in_operation: number;
+  certifications?: string[];
   udyam?: File | null;
   gst?: File | null;
 }

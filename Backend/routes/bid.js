@@ -2,7 +2,7 @@ const { requireFromDeps } = require('../lib/deps')
 
 const express = requireFromDeps('express')
 const { callGemini, cleanJSON } = require('../lib/gemini')
-const { profileStore } = require('./profile')
+const { getProfileById } = require('../lib/store')
 const tenders = require('../data/tenders.json')
 
 const router = express.Router()
@@ -10,7 +10,7 @@ const router = express.Router()
 router.post('/', async (req, res) => {
   try {
     const { profile_id, tender_id } = req.body
-    const profile = profileStore.get(profile_id)
+    const profile = await getProfileById(profile_id)
     const tender = tenders.find(t => t.id === tender_id)
 
     if (!profile) return res.status(404).json({ error: 'Profile not found' })
@@ -37,8 +37,8 @@ Company:
 - Turnover: ${profile.turnover}
 - Years: ${profile.years_in_operation}
 - Certifications: ${JSON.stringify(profile.certifications || [])}
-- GST: ${profile.gst_number || 'Registered'}
-- Udyam: ${profile.udyam_number || 'Registered'}
+- GST: ${profile.gst_number || 'Not provided — mark GST Certificate as missing'}
+- Udyam: ${profile.udyam_number || 'Not provided — mark Udyam Certificate as missing'}
 
 Tender:
 - Title: ${tender.title}
@@ -46,6 +46,8 @@ Tender:
 - Value: ${tender.value}
 - Requirements: ${tender.full_text}
 
+For the checklist, set status to "ready" only if the company has the document evidence above.
+Set status to "missing" if the company has null/not provided for that field.
 Checklist must include:
 GST Certificate, Udyam Certificate, PAN Card,
 Last 3 Years ITR, Bank Solvency Certificate,

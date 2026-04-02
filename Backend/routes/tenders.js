@@ -2,14 +2,22 @@ const { requireFromDeps } = require('../lib/deps')
 
 const express = requireFromDeps('express')
 const { callGemini, cleanJSON } = require('../lib/gemini')
-const { profileStore } = require('./profile')
+const { getProfileById } = require('../lib/store')
 const tenders = require('../data/tenders.json')
 
 const router = express.Router()
 
+// GET /api/tenders/detail/:tender_id — must be defined BEFORE /:profile_id
+router.get('/detail/:tender_id', (req, res) => {
+  const tender = tenders.find(t => t.id === req.params.tender_id)
+  if (!tender) return res.status(404).json({ error: 'Tender not found' })
+  res.json(tender)
+})
+
+// GET /api/tenders/:profile_id — return AI-scored matching tenders
 router.get('/:profile_id', async (req, res) => {
   try {
-    const profile = profileStore.get(req.params.profile_id)
+    const profile = await getProfileById(req.params.profile_id)
 
     if (!profile) {
       return res.status(404).json({ error: 'Profile not found' })

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { getTenders, getProfile, saveTender, unsaveTender, isTenderSaved, MOCK_PROFILE_ID } from '@/lib/mockApi';
+import { getTenders, getProfile, saveTender, unsaveTender, isTenderSaved, getProfileId } from '@/lib/mockApi';
 import { formatDate, getDaysUntilDeadline, getMatchScoreMeta, getDeadlineLabel } from '@/lib/utils';
 import type { Tender, Profile, DashboardTab } from '@/types';
 
@@ -133,9 +133,16 @@ export default function DashboardPage() {
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    Promise.all([getTenders(MOCK_PROFILE_ID), getProfile()]).then(([tendersData, profileData]) => {
+    const profileId = getProfileId();
+    const tendersFetch = profileId
+      ? getTenders(profileId).catch(() => ({ tenders: [] }))
+      : Promise.resolve({ tenders: [] });
+    const profileFetch = profileId
+      ? getProfile().catch(() => null)
+      : Promise.resolve(null);
+    Promise.all([tendersFetch, profileFetch]).then(([tendersData, profileData]) => {
       setTenders(tendersData.tenders);
-      setProfile(profileData.profile);
+      setProfile(profileData?.profile ?? null);
       setLoading(false);
     });
   }, []);

@@ -10,7 +10,7 @@ import {
   saveTender,
   unsaveTender,
   isTenderSaved,
-  MOCK_PROFILE_ID,
+  getProfileId,
 } from '@/lib/mockApi';
 import { formatDate, getDaysUntilDeadline, getMatchScoreMeta, getDeadlineLabel } from '@/lib/utils';
 import type { Tender, TenderDetails, Eligibility, EligibilityCriterion } from '@/types';
@@ -118,7 +118,7 @@ export default function TenderDetailPage() {
     Promise.all([
       getTenderById(id),
       getTenderDetails(id),
-      checkEligibility(MOCK_PROFILE_ID, id),
+      checkEligibility(getProfileId(), id).catch(() => null),
     ]).then(([tenderData, detailsData, eligibilityData]) => {
       if (!tenderData) {
         router.push('/dashboard');
