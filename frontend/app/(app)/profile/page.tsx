@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { getProfile } from '@/lib/mockApi';
+import { getProfile, updateProfile } from '@/lib/mockApi';
 import { DocumentUploadRow } from '@/components/DocumentUploadRow';
 import type { Profile, ProfileProject } from '@/types';
 import type { DocumentState } from '@/components/DocumentUploadRow';
@@ -9,14 +9,16 @@ import type { DocumentState } from '@/components/DocumentUploadRow';
 // Initial document state. status/date/filename are local UI state.
 // When a real upload API is connected, wire onFileSelected to
 // POST/PUT the file and update state on success.
+// All docs start as missing. udyam/gst are hydrated from backend profile on load.
+// Other docs (pan, itr, iso, bank, exp) are not tracked by the backend yet.
 const INITIAL_DOCS: { key: string; label: string; required: boolean; state: DocumentState }[] = [
-  { key: 'udyam',  label: 'Udyam Registration Certificate',  required: true,  state: { status: 'uploaded', date: '15 Jan 2024', filename: 'udyam_cert.pdf' } },
-  { key: 'gst',    label: 'GST Registration Certificate',     required: true,  state: { status: 'uploaded', date: '22 Mar 2024', filename: 'gst_reg.pdf' } },
-  { key: 'pan',    label: 'PAN Card (Company)',               required: true,  state: { status: 'uploaded', date: '01 Apr 2023', filename: 'pan_card.pdf' } },
-  { key: 'itr1',   label: 'Income Tax Returns (FY 2023-24)',  required: true,  state: { status: 'uploaded', date: '31 Jul 2024', filename: 'itr_2324.pdf' } },
-  { key: 'itr2',   label: 'Income Tax Returns (FY 2022-23)',  required: true,  state: { status: 'uploaded', date: '15 Aug 2023', filename: 'itr_2223.pdf' } },
-  { key: 'itr3',   label: 'Income Tax Returns (FY 2021-22)',  required: true,  state: { status: 'uploaded', date: '12 Sep 2022', filename: 'itr_2122.pdf' } },
-  { key: 'iso',    label: 'ISO 9001 Certificate',             required: false, state: { status: 'uploaded', date: '05 Feb 2024', filename: 'iso9001.pdf' } },
+  { key: 'udyam',  label: 'Udyam Registration Certificate',  required: true,  state: { status: 'missing' } },
+  { key: 'gst',    label: 'GST Registration Certificate',     required: true,  state: { status: 'missing' } },
+  { key: 'pan',    label: 'PAN Card (Company)',               required: true,  state: { status: 'missing' } },
+  { key: 'itr1',   label: 'Income Tax Returns (FY 2023-24)',  required: true,  state: { status: 'missing' } },
+  { key: 'itr2',   label: 'Income Tax Returns (FY 2022-23)',  required: true,  state: { status: 'missing' } },
+  { key: 'itr3',   label: 'Income Tax Returns (FY 2021-22)',  required: true,  state: { status: 'missing' } },
+  { key: 'iso',    label: 'ISO 9001 Certificate',             required: false, state: { status: 'missing' } },
   { key: 'bank',   label: 'Bank Solvency Certificate',        required: false, state: { status: 'missing' } },
   { key: 'exp',    label: 'Work Completion Certificates',     required: false, state: { status: 'missing' } },
 ];
@@ -52,8 +54,15 @@ export default function ProfilePage() {
       setProfile(res.profile);
       setEditData(res.profile);
       setProfileProjects(res.profile.past_projects ?? []);
+      // Hydrate doc status from backend: udyam/gst are marked uploaded when
+      // the backend successfully extracted registration numbers from them.
+      setDocStates((prev) => ({
+        ...prev,
+        ...(res.profile.udyam_number ? { udyam: { status: 'uploaded', filename: 'Udyam Certificate' } } : {}),
+        ...(res.profile.gst_number   ? { gst:   { status: 'uploaded', filename: 'GST Certificate'   } } : {}),
+      }));
       setLoading(false);
-    });
+    }).catch(() => setLoading(false));
   }, []);
 
   function handleAddProject() {
@@ -87,12 +96,19 @@ export default function ProfilePage() {
 
   async function handleSaveProfile() {
     setSavingProfile(true);
-    await new Promise((r) => setTimeout(r, 800));
-    setProfile({ ...profile!, ...editData });
-    setEditing(false);
-    setSavingProfile(false);
-    setProfileSaved(true);
-    setTimeout(() => setProfileSaved(false), 2500);
+    try {
+      const res = await updateProfile(editData);
+      setProfile(res.profile);
+      setEditData(res.profile);
+    } catch {
+      // Fallback: update local state so UI isn't left in broken state
+      setProfile({ ...profile!, ...editData });
+    } finally {
+      setEditing(false);
+      setSavingProfile(false);
+      setProfileSaved(true);
+      setTimeout(() => setProfileSaved(false), 2500);
+    }
   }
 
   /**

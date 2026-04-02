@@ -3,7 +3,7 @@ const { requireFromDeps } = require('../lib/deps')
 const express = requireFromDeps('express')
 const { callGemini, cleanJSON } = require('../lib/gemini')
 const { getProfileById } = require('../lib/store')
-const tenders = require('../data/tenders.json')
+const { tenders } = require('../data/tenders.json')
 
 const router = express.Router()
 

@@ -102,7 +102,8 @@ function SkeletonBlock({ className }: { className?: string }) {
 }
 
 export default function TenderDetailPage() {
-  const { id } = useParams<{ id: string }>();
+  const params = useParams<{ id: string[] }>();
+  const id = Array.isArray(params.id) ? params.id.join('/') : (params.id ?? '');
   const router = useRouter();
   const [tender, setTender] = useState<Tender | null>(null);
   const [details, setDetails] = useState<TenderDetails | null>(null);
@@ -229,7 +230,7 @@ export default function TenderDetailPage() {
             <div className="grid grid-cols-3 gap-4">
               <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
                 <p className="text-xs text-slate-500 mb-1">Tender Value</p>
-                <p className="text-base font-bold text-slate-900">{tender.value}</p>
+                <p className="text-base font-bold text-slate-900">{tender.value ?? 'Not disclosed'}</p>
               </div>
               <div className={`rounded-xl p-4 border ${getDeadlineLabel(tender.deadline).color} border-current/20`}>
                 <p className="text-xs opacity-70 mb-1">Submission Deadline</p>

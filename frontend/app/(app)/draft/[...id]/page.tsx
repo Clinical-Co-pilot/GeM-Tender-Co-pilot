@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { getTenderById, generateBid, getProfile, getProfileId } from '@/lib/mockApi';
+import { getTenderById, generateBid, getProfile, getProfileId, getDraftFromStore, saveDraftToStore } from '@/lib/mockApi';
 import { formatDate } from '@/lib/utils';
 import type { Tender, Bid, ChecklistItem, TeamMember, PastProject, ScopeMappingRow, TimelineRow, ComplianceMatrixRow, Profile } from '@/types';
 
@@ -415,7 +415,8 @@ function ChecklistPanel({ items }: { items: ChecklistItem[] }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function DraftBidPage() {
-  const { id } = useParams<{ id: string }>();
+  const params = useParams<{ id: string[] }>();
+  const id = Array.isArray(params.id) ? params.id.join('/') : (params.id ?? '');
   const [tender, setTender] = useState<Tender | null>(null);
   const [bid, setBid] = useState<Bid | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -427,14 +428,22 @@ export default function DraftBidPage() {
 
   useEffect(() => {
     if (!id) return;
+    const cachedBid = getDraftFromStore(id);
+    const bidPromise = cachedBid
+      ? Promise.resolve(cachedBid)
+      : generateBid(getProfileId(), id);
     Promise.all([
       getTenderById(id),
-      generateBid(getProfileId(), id),
+      bidPromise,
       getProfile().catch(() => null),
     ]).then(([t, b, p]) => {
       setTender(t);
       setBid(b);
       setProfile(p?.profile ?? null);
+      // Cache the bid so the drafts page can list it and reloads are instant
+      if (!cachedBid && t) {
+        saveDraftToStore(id, t.title, t.department ?? '', b);
+      }
       const initial = {
         cover_letter: b.cover_letter ?? '',
         executive_summary: b.executive_summary ?? '',

@@ -3,13 +3,13 @@ const { requireFromDeps } = require('../lib/deps')
 const express = requireFromDeps('express')
 const { callGemini, cleanJSON } = require('../lib/gemini')
 const { getProfileById } = require('../lib/store')
-const tenders = require('../data/tenders.json')
+const { tenders } = require('../data/tenders.json')
 
 const router = express.Router()
 
-// GET /api/tenders/detail/:tender_id — must be defined BEFORE /:profile_id
-router.get('/detail/:tender_id', (req, res) => {
-  const tender = tenders.find(t => t.id === req.params.tender_id)
+// GET /api/tenders/detail?id=... — uses query param because tender IDs contain slashes
+router.get('/detail', (req, res) => {
+  const tender = tenders.find(t => t.id === req.query.id)
   if (!tender) return res.status(404).json({ error: 'Tender not found' })
   res.json(tender)
 })

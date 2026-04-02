@@ -16,6 +16,7 @@ import {
   MOCK_TENDER_DETAILS,
 } from '@/lib/mockData';
 import type {
+  Profile,
   ProfileResponse,
   ProfileUploadPayload,
   TendersResponse,
@@ -28,6 +29,8 @@ import type {
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 const PROFILE_ID_KEY = 'gem_profile_id';
+const COMPANY_NAME_KEY = 'gem_company_name';
+const DRAFTS_KEY = 'gem_drafts';
 
 export function getProfileId(): string {
   if (typeof window === 'undefined') return '';
@@ -40,9 +43,51 @@ function setProfileId(id: string) {
   }
 }
 
+export function getCompanyName(): string {
+  if (typeof window === 'undefined') return '';
+  return localStorage.getItem(COMPANY_NAME_KEY) || '';
+}
+
+function setCompanyName(name: string) {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(COMPANY_NAME_KEY, name);
+  }
+}
+
 // Keep for backward compat — pages that still import MOCK_PROFILE_ID at module
 // level will get an empty string on first load; use getProfileId() in effects.
 export const MOCK_PROFILE_ID = '';
+
+// ─── Draft cache (localStorage) ──────────────────────────────────────────────
+export interface DraftEntry {
+  tenderId: string;
+  tenderTitle: string;
+  tenderDept: string;
+  createdAt: string;
+  bid: Bid;
+}
+
+export function getDraftsFromStore(): DraftEntry[] {
+  if (typeof window === 'undefined') return [];
+  try { return JSON.parse(localStorage.getItem(DRAFTS_KEY) || '[]'); }
+  catch { return []; }
+}
+
+export function getDraftFromStore(tenderId: string): Bid | null {
+  return getDraftsFromStore().find((d) => d.tenderId === tenderId)?.bid ?? null;
+}
+
+export function saveDraftToStore(
+  tenderId: string,
+  tenderTitle: string,
+  tenderDept: string,
+  bid: Bid,
+): void {
+  if (typeof window === 'undefined') return;
+  const rest = getDraftsFromStore().filter((d) => d.tenderId !== tenderId);
+  rest.unshift({ tenderId, tenderTitle, tenderDept, createdAt: new Date().toISOString(), bid });
+  localStorage.setItem(DRAFTS_KEY, JSON.stringify(rest));
+}
 
 // Saved tenders stored in memory (simulates session state)
 const savedTenderIds = new Set<string>();
@@ -67,6 +112,7 @@ export async function uploadProfile(
   if (!res.ok) throw new Error(`Profile upload failed: ${res.status}`);
   const data: ProfileResponse = await res.json();
   setProfileId(data.profile_id);
+  setCompanyName(payload.company_name);
   return data;
 }
 
@@ -76,6 +122,20 @@ export async function getProfile(): Promise<ProfileResponse> {
   if (!profileId) throw new Error('No profile found. Please complete onboarding.');
   const res = await fetch(`${API_BASE}/api/profile/${profileId}`);
   if (!res.ok) throw new Error(`Profile fetch failed: ${res.status}`);
+  return res.json();
+}
+
+// ─── PUT /api/profile/:profile_id ────────────────────────────────────────────
+export async function updateProfile(updates: Partial<Profile>): Promise<ProfileResponse> {
+  const profileId = getProfileId();
+  if (!profileId) throw new Error('No profile found. Please complete onboarding.');
+  const res = await fetch(`${API_BASE}/api/profile/${profileId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) throw new Error(`Profile update failed: ${res.status}`);
+  if (updates.company_name) setCompanyName(updates.company_name);
   return res.json();
 }
 
@@ -90,9 +150,11 @@ export async function getTenders(
   return res.json();
 }
 
-// ─── GET /api/tenders/detail/:id ─────────────────────────────────────────────
+// ─── GET /api/tenders/detail?id=... ──────────────────────────────────────────
+// Uses query param because tender IDs contain slashes (e.g. GEM/2026/B/7370638)
+// which cannot safely be placed in a URL path segment.
 export async function getTenderById(id: string): Promise<Tender | null> {
-  const res = await fetch(`${API_BASE}/api/tenders/detail/${id}`);
+  const res = await fetch(`${API_BASE}/api/tenders/detail?id=${encodeURIComponent(id)}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Tender fetch failed: ${res.status}`);
   return res.json();

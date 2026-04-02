@@ -1,7 +1,9 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { getCompanyName } from '@/lib/mockApi';
 
 const NAV_LINKS = [
   {
@@ -35,6 +37,14 @@ const NAV_LINKS = [
 
 export default function AppNav() {
   const pathname = usePathname();
+  const [companyName, setCompanyNameState] = useState('');
+
+  useEffect(() => {
+    setCompanyNameState(getCompanyName());
+  }, []);
+
+  const initial = companyName ? companyName.charAt(0).toUpperCase() : '?';
+  const displayName = companyName || 'My Company';
 
   function isActive(href: string) {
     if (href === '/dashboard') return pathname === '/dashboard';
@@ -83,9 +93,9 @@ export default function AppNav() {
             title="View company profile"
           >
             <div className="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center">
-              <span className="text-white text-xs font-bold">S</span>
+              <span className="text-white text-xs font-bold">{initial}</span>
             </div>
-            <span className="text-sm font-medium text-slate-700 hidden md:block">Sharma Tech</span>
+            <span className="text-sm font-medium text-slate-700 hidden md:block">{displayName}</span>
           </Link>
         </div>
       </div>

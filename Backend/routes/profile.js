@@ -98,9 +98,31 @@ Category: ${category}`
 
 // GET /api/profile/:profile_id
 router.get('/:profile_id', async (req, res) => {
-  const profile = await getProfileById(req.params.profile_id)
-  if (!profile) return res.status(404).json({ error: 'Profile not found' })
-  res.json({ profile_id: req.params.profile_id, profile })
+  try {
+    const profile = await getProfileById(req.params.profile_id)
+    if (!profile) return res.status(404).json({ error: 'Profile not found' })
+    res.json({ profile_id: req.params.profile_id, profile })
+  } catch (err) {
+    console.error('Profile fetch error:', err)
+    res.status(503).json({ error: 'Database unavailable', details: err.message })
+  }
+})
+
+// PUT /api/profile/:profile_id — update mutable profile fields
+router.put('/:profile_id', async (req, res) => {
+  try {
+    const { profile_id } = req.params
+    const existing = await getProfileById(profile_id)
+    if (!existing) return res.status(404).json({ error: 'Profile not found' })
+    // Merge updates over existing — disallow replacing profile_id itself
+    const { profile_id: _ignored, ...updates } = req.body
+    await saveProfile(profile_id, { ...existing, ...updates })
+    const updated = await getProfileById(profile_id)
+    res.json({ profile_id, profile: updated })
+  } catch (err) {
+    console.error('Profile update error:', err)
+    res.status(503).json({ error: 'Profile update failed', details: err.message })
+  }
 })
 
 module.exports = router

@@ -32,13 +32,14 @@ app.use('/api/bid', bidRoutes)
 
 const PORT = process.env.PORT || 3001
 
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`)
+})
+
 connect()
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`)
-    })
-  })
+  .then(() => console.log('MongoDB connected'))
   .catch((err) => {
-    console.error('Failed to connect to MongoDB:', err.message)
-    process.exit(1)
+    console.warn('[MongoDB] Connection failed — running in degraded mode.')
+    console.warn('[MongoDB]', err.message)
+    console.warn('[MongoDB] Profile/tender routes will return 503 until DB is reachable.')
   })

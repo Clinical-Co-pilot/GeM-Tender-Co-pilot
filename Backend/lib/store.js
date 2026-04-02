@@ -3,6 +3,12 @@
  * All routes use this module so DB logic is centralised here.
  */
 
+// The local router DNS refuses SRV queries (needed by mongodb+srv:// URIs).
+// Prepend public DNS servers so the MongoDB driver can resolve SRV records,
+// while still falling back to the system resolver for everything else.
+const dns = require('dns')
+dns.setServers(['8.8.8.8', '1.1.1.1', ...dns.getServers()])
+
 const { MongoClient } = require('mongodb')
 
 const MONGODB_URL = process.env.MONGODB_URL
@@ -10,15 +16,23 @@ const DB_NAME = 'gem_tender_copilot'
 
 let client = null
 let db = null
+let connectError = null
 
 async function connect() {
   if (db) return db
+  if (connectError) throw connectError
   if (!MONGODB_URL) throw new Error('MONGODB_URL is not set in .env')
-  client = new MongoClient(MONGODB_URL)
-  await client.connect()
-  db = client.db(DB_NAME)
-  console.log(`MongoDB connected — database: ${DB_NAME}`)
-  return db
+  try {
+    client = new MongoClient(MONGODB_URL)
+    await client.connect()
+    db = client.db(DB_NAME)
+    connectError = null
+    console.log(`MongoDB connected — database: ${DB_NAME}`)
+    return db
+  } catch (err) {
+    connectError = err
+    throw err
+  }
 }
 
 async function saveProfile(id, profile) {
