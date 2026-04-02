@@ -1,6 +1,9 @@
-const express = require('express')
-const cors = require('cors')
-require('dotenv').config()
+const { requireFromDeps } = require('./lib/deps')
+
+const express = requireFromDeps('express')
+const cors = requireFromDeps('cors')
+
+requireFromDeps('dotenv').config()
 
 const profileRoutes = require('./routes/profile')
 const tenderRoutes = require('./routes/tenders')
