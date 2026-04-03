@@ -1,49 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { getProfile, updateProfile } from '@/lib/mockApi';
+import { useEffect, useState } from 'react';
+import { getProfile, getTenderWorkflow, listDrafts, updateProfile, uploadProfileDocument } from '@/lib/mockApi';
 import { DocumentUploadRow } from '@/components/DocumentUploadRow';
-import type { Profile, ProfileProject } from '@/types';
-import type { DocumentState } from '@/components/DocumentUploadRow';
-
-// Initial document state. status/date/filename are local UI state.
-// When a real upload API is connected, wire onFileSelected to
-// POST/PUT the file and update state on success.
-// All docs start as missing. udyam/gst are hydrated from backend profile on load.
-// Other docs (pan, itr, iso, bank, exp) are not tracked by the backend yet.
-const INITIAL_DOCS: { key: string; label: string; required: boolean; state: DocumentState }[] = [
-  { key: 'udyam',  label: 'Udyam Registration Certificate',  required: true,  state: { status: 'missing' } },
-  { key: 'gst',    label: 'GST Registration Certificate',     required: true,  state: { status: 'missing' } },
-  { key: 'pan',    label: 'PAN Card (Company)',               required: true,  state: { status: 'missing' } },
-  { key: 'itr1',   label: 'Income Tax Returns (FY 2023-24)',  required: true,  state: { status: 'missing' } },
-  { key: 'itr2',   label: 'Income Tax Returns (FY 2022-23)',  required: true,  state: { status: 'missing' } },
-  { key: 'itr3',   label: 'Income Tax Returns (FY 2021-22)',  required: true,  state: { status: 'missing' } },
-  { key: 'iso',    label: 'ISO 9001 Certificate',             required: false, state: { status: 'missing' } },
-  { key: 'bank',   label: 'Bank Solvency Certificate',        required: false, state: { status: 'missing' } },
-  { key: 'exp',    label: 'Work Completion Certificates',     required: false, state: { status: 'missing' } },
-];
-
-type DocMap = Record<string, DocumentState>;
-
-function buildDocMap(items: typeof INITIAL_DOCS): DocMap {
-  return Object.fromEntries(items.map((d) => [d.key, d.state]));
-}
-
-const DOC_STATES_KEY = 'gem_doc_states';
-
-function loadDocStatesFromStorage(): DocMap {
-  if (typeof window === 'undefined') return {};
-  try {
-    return JSON.parse(localStorage.getItem(DOC_STATES_KEY) || '{}');
-  } catch {
-    return {};
-  }
-}
-
-function saveDocStatesToStorage(states: DocMap) {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(DOC_STATES_KEY, JSON.stringify(states));
-}
+import { PROFILE_DOCUMENT_DEFINITIONS, getProfileCompleteness, getRegistrationDisplayValue } from '@/lib/profileContract';
+import type { Profile, ProfileDocumentKey, ProfileProject } from '@/types';
 
 const EMPTY_PROJECT_FORM = {
   title: '', client: '', industry: '', duration: '', value: '',
@@ -51,45 +12,74 @@ const EMPTY_PROJECT_FORM = {
   has_completion_certificate: false,
 };
 
+type EditableProfileState = Pick<
+  Profile,
+  'company_name' | 'category' | 'turnover' | 'years_in_operation' | 'certifications'
+>;
+
+function getEditableProfileState(profile: Profile): EditableProfileState {
+  return {
+    company_name: profile.company_name,
+    category: profile.category,
+    turnover: profile.turnover,
+    years_in_operation: profile.years_in_operation,
+    certifications: [...profile.certifications],
+  };
+}
+
 export default function ProfilePage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
-  const [editData, setEditData] = useState<Partial<Profile>>({});
+  const [editData, setEditData] = useState<EditableProfileState | null>(null);
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
-  const [docStates, setDocStates] = useState<DocMap>(buildDocMap(INITIAL_DOCS));
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [uploadingDocumentKey, setUploadingDocumentKey] = useState<ProfileDocumentKey | null>(null);
+  const [showCertInput, setShowCertInput] = useState(false);
+  const [newCertification, setNewCertification] = useState('');
   // Past projects library — local state until backend is connected
   // TODO: persist via POST /api/profile/projects when backend is ready
   const [profileProjects, setProfileProjects] = useState<ProfileProject[]>([]);
   const [showProjectForm, setShowProjectForm] = useState(false);
   const [projectForm, setProjectForm] = useState(EMPTY_PROJECT_FORM);
+  const [activityStats, setActivityStats] = useState({
+    analyzed: 0,
+    drafts: 0,
+    saved: 0,
+  });
 
   useEffect(() => {
-    // Seed doc states from localStorage first so previously-uploaded docs survive refresh
-    const saved = loadDocStatesFromStorage();
-    if (Object.keys(saved).length > 0) {
-      setDocStates((prev) => ({ ...prev, ...saved }));
-    }
+    let active = true;
 
-    getProfile().then((res) => {
-      setProfile(res.profile);
-      setEditData(res.profile);
-      setProfileProjects(res.profile.past_projects ?? []);
-      // Backend is authoritative for udyam/gst (extracted numbers prove upload success).
-      // Merge backend state on top of localStorage so backend truth wins for those two.
-      setDocStates((prev) => {
-        const next = { ...prev };
-        if (res.profile.udyam_number) {
-          next.udyam = { status: 'uploaded', filename: prev.udyam?.filename || 'Udyam Certificate' };
+    Promise.allSettled([getProfile(), getTenderWorkflow(), listDrafts()])
+      .then(([profileResult, workflowResult, draftResult]) => {
+        if (!active) return;
+
+        if (profileResult.status === 'fulfilled') {
+          setProfile(profileResult.value.profile);
+          setEditData(getEditableProfileState(profileResult.value.profile));
+          setProfileProjects(profileResult.value.profile.past_projects ?? []);
+        } else {
+          setSaveError(profileResult.reason instanceof Error ? profileResult.reason.message : 'Unable to load profile');
         }
-        if (res.profile.gst_number) {
-          next.gst = { status: 'uploaded', filename: prev.gst?.filename || 'GST Certificate' };
-        }
-        return next;
+
+        const workflowItems = workflowResult.status === 'fulfilled' ? workflowResult.value : [];
+        const drafts = draftResult.status === 'fulfilled' ? draftResult.value.drafts : [];
+
+        setActivityStats({
+          analyzed: workflowItems.filter((item) => Boolean(item.analyzed_at)).length,
+          drafts: drafts.length,
+          saved: workflowItems.filter((item) => item.saved).length,
+        });
+      })
+      .finally(() => {
+        if (active) setLoading(false);
       });
-      setLoading(false);
-    }).catch(() => setLoading(false));
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   function handleAddProject() {
@@ -117,51 +107,88 @@ export default function ProfilePage() {
   }
 
   function handleStartEdit() {
-    setEditData({ ...profile });
+    if (!profile) return;
+    setSaveError(null);
+    setEditData(getEditableProfileState(profile));
     setEditing(true);
   }
 
+  function handleCancelEdit() {
+    if (!profile) return;
+    setEditData(getEditableProfileState(profile));
+    setEditing(false);
+    setShowCertInput(false);
+    setNewCertification('');
+    setSaveError(null);
+  }
+
   async function handleSaveProfile() {
+    if (!editData) return;
     setSavingProfile(true);
+    setSaveError(null);
+
     try {
       const res = await updateProfile(editData);
       setProfile(res.profile);
-      setEditData(res.profile);
-    } catch {
-      // Fallback: update local state so UI isn't left in broken state
-      setProfile({ ...profile!, ...editData });
-    } finally {
+      setEditData(getEditableProfileState(res.profile));
       setEditing(false);
-      setSavingProfile(false);
+      setShowCertInput(false);
+      setNewCertification('');
       setProfileSaved(true);
       setTimeout(() => setProfileSaved(false), 2500);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Profile save failed');
+    } finally {
+      setSavingProfile(false);
     }
   }
 
-  /**
-   * Called when user selects a file via the file chooser.
-   * Currently updates local UI state only.
-   * TODO: replace the await-delay with a real API call:
-   *   await uploadDocumentAPI(key, file);
-   */
-  function handleFileSelected(key: string, file: File) {
-    const today = new Date().toLocaleDateString('en-IN', {
-      day: '2-digit', month: 'short', year: 'numeric',
-    });
-    setDocStates((prev) => {
-      const next = {
-        ...prev,
-        [key]: { status: 'uploaded' as const, filename: file.name, date: today },
-      };
-      // Persist all doc states so they survive page refresh
-      saveDocStatesToStorage(next);
-      return next;
-    });
+  async function handleFileSelected(key: string, file: File) {
+    setSaveError(null);
+    setUploadingDocumentKey(key as ProfileDocumentKey);
+
+    try {
+      const res = await uploadProfileDocument(key as ProfileDocumentKey, file);
+      setProfile(res.profile);
+      if (!editing) {
+        setEditData(getEditableProfileState(res.profile));
+      }
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Document upload failed');
+    } finally {
+      setUploadingDocumentKey(null);
+    }
   }
 
-  const uploadedCount = Object.values(docStates).filter((s) => s.status === 'uploaded').length;
-  const totalDocs = INITIAL_DOCS.length;
-  const profileCompletenessScore = Math.round(((uploadedCount / totalDocs) * 50) + 50);
+  function handleAddCertification() {
+    const certification = newCertification.trim();
+    if (!certification) return;
+
+    setEditData((prev) => {
+      if (!prev) return prev;
+      if (prev.certifications.some((item) => item.toLowerCase() === certification.toLowerCase())) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        certifications: [...prev.certifications, certification],
+      };
+    });
+
+    setNewCertification('');
+    setShowCertInput(false);
+  }
+
+  function handleRemoveCertification(certification: string) {
+    setEditData((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        certifications: prev.certifications.filter((item) => item !== certification),
+      };
+    });
+  }
 
   if (loading) {
     return (
@@ -179,7 +206,14 @@ export default function ProfilePage() {
     );
   }
 
-  if (!profile) return null;
+  if (!profile || !editData) return null;
+
+  const uploadedCount = PROFILE_DOCUMENT_DEFINITIONS.filter(
+    (doc) => profile.documents[doc.key]?.status === 'uploaded'
+  ).length;
+  const totalDocs = PROFILE_DOCUMENT_DEFINITIONS.length;
+  const profileCompletenessScore = getProfileCompleteness(profile);
+  const displayedCertifications = editing ? editData.certifications : profile.certifications;
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-8">
@@ -199,6 +233,12 @@ export default function ProfilePage() {
         )}
       </div>
 
+      {saveError && (
+        <div className="mb-6 border border-red-200 bg-red-50 text-red-700 text-sm rounded-xl px-4 py-3">
+          {saveError}
+        </div>
+      )}
+
       <div className="grid lg:grid-cols-4 gap-6">
         {/* Left column: main details */}
         <div className="lg:col-span-3 space-y-5">
@@ -214,7 +254,7 @@ export default function ProfilePage() {
               {editing ? (
                 <div className="flex gap-2">
                   <button
-                    onClick={() => setEditing(false)}
+                    onClick={handleCancelEdit}
                     className="text-xs text-slate-500 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors"
                   >
                     Cancel
@@ -230,7 +270,7 @@ export default function ProfilePage() {
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                       </svg>
                     )}
-                    {savingProfile ? 'Saving…' : 'Save Changes'}
+                    {savingProfile ? 'Saving...' : 'Save Changes'}
                   </button>
                 </div>
               ) : (
@@ -256,14 +296,14 @@ export default function ProfilePage() {
                 <div>
                   {editing ? (
                     <input
-                      value={editData.company_name ?? ''}
-                      onChange={(e) => setEditData((p) => ({ ...p, company_name: e.target.value }))}
+                      value={editData.company_name}
+                      onChange={(e) => setEditData((p) => (p ? { ...p, company_name: e.target.value } : p))}
                       className="text-lg font-bold text-slate-900 bg-white border border-blue-300 rounded-lg px-3 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 w-full"
                     />
                   ) : (
                     <h3 className="text-lg font-bold text-slate-900">{profile.company_name}</h3>
                   )}
-                  <p className="text-sm text-blue-700 font-medium">{profile.category}</p>
+                  <p className="text-sm text-blue-700 font-medium">{editing ? editData.category : profile.category}</p>
                 </div>
               </div>
 
@@ -272,19 +312,19 @@ export default function ProfilePage() {
                 <div className="space-y-4">
                   <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400">Registration Details</h4>
                   <div>
-                    <label className="text-xs font-medium text-slate-500 block mb-1">Udyam Number</label>
-                    <p className="text-sm font-mono text-slate-800 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">{profile.udyam_number}</p>
+                    <label className="text-xs font-medium text-slate-500 block mb-1">Udyam</label>
+                    <p className="text-sm font-mono text-slate-800 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">{getRegistrationDisplayValue(profile, 'udyam')}</p>
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-slate-500 block mb-1">GST Number</label>
-                    <p className="text-sm font-mono text-slate-800 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">{profile.gst_number}</p>
+                    <label className="text-xs font-medium text-slate-500 block mb-1">GST</label>
+                    <p className="text-sm font-mono text-slate-800 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">{getRegistrationDisplayValue(profile, 'gst')}</p>
                   </div>
                   <div>
                     <label className="text-xs font-medium text-slate-500 block mb-1">Business Category</label>
                     {editing ? (
                       <input
-                        value={editData.category ?? ''}
-                        onChange={(e) => setEditData((p) => ({ ...p, category: e.target.value }))}
+                        value={editData.category}
+                        onChange={(e) => setEditData((p) => (p ? { ...p, category: e.target.value } : p))}
                         className="w-full text-sm bg-white border border-blue-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     ) : (
@@ -301,13 +341,13 @@ export default function ProfilePage() {
                     {editing ? (
                       <input
                         type="number"
-                        value={editData.turnover ?? 0}
-                        onChange={(e) => setEditData((p) => ({ ...p, turnover: Number(e.target.value) }))}
+                        value={editData.turnover}
+                        onChange={(e) => setEditData((p) => (p ? { ...p, turnover: Number(e.target.value) } : p))}
                         className="w-full text-sm bg-white border border-blue-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     ) : (
                       <p className="text-sm text-slate-800 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
-                        ₹{(profile.turnover / 100000).toFixed(1)} Lakh
+                        Rs {(profile.turnover / 100000).toFixed(1)} Lakh
                       </p>
                     )}
                   </div>
@@ -316,8 +356,8 @@ export default function ProfilePage() {
                     {editing ? (
                       <input
                         type="number"
-                        value={editData.years_in_operation ?? 0}
-                        onChange={(e) => setEditData((p) => ({ ...p, years_in_operation: Number(e.target.value) }))}
+                        value={editData.years_in_operation}
+                        onChange={(e) => setEditData((p) => (p ? { ...p, years_in_operation: Number(e.target.value) } : p))}
                         className="w-full text-sm bg-white border border-blue-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     ) : (
@@ -331,18 +371,53 @@ export default function ProfilePage() {
                   <div>
                     <label className="text-xs font-medium text-slate-500 block mb-2">Certifications</label>
                     <div className="flex flex-wrap gap-2">
-                      {profile.certifications.map((cert) => (
+                      {displayedCertifications.map((cert) => (
                         <span key={cert} className="inline-flex items-center gap-1.5 text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1 rounded-full font-medium">
                           <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
                           {cert}
+                          {editing && (
+                            <button type="button" onClick={() => handleRemoveCertification(cert)} className="text-blue-500 hover:text-blue-700">
+                              ×
+                            </button>
+                          )}
                         </span>
                       ))}
-                      <button className="text-xs text-blue-600 border border-dashed border-blue-300 px-2.5 py-1 rounded-full hover:bg-blue-50 transition-colors">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!editing) handleStartEdit();
+                          setShowCertInput(true);
+                        }}
+                        className="text-xs text-blue-600 border border-dashed border-blue-300 px-2.5 py-1 rounded-full hover:bg-blue-50 transition-colors"
+                      >
                         + Add
                       </button>
                     </div>
+                    {showCertInput && (
+                      <div className="mt-3 flex gap-2">
+                        <input
+                          value={newCertification}
+                          onChange={(e) => setNewCertification(e.target.value)}
+                          placeholder="Add certification"
+                          className="flex-1 text-sm bg-white border border-blue-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <button type="button" onClick={handleAddCertification} className="text-xs text-white bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded-lg font-medium">
+                          Add
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowCertInput(false);
+                            setNewCertification('');
+                          }}
+                          className="text-xs text-slate-500 px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-100"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -363,13 +438,18 @@ export default function ProfilePage() {
               </span>
             </div>
             <div className="p-5 space-y-3">
-              {INITIAL_DOCS.map((doc) => (
+              {PROFILE_DOCUMENT_DEFINITIONS.map((doc) => (
                 <DocumentUploadRow
                   key={doc.key}
                   docKey={doc.key}
                   label={doc.label}
                   required={doc.required}
-                  state={docStates[doc.key]}
+                  state={{
+                    status: profile.documents[doc.key]?.status ?? 'missing',
+                    filename: profile.documents[doc.key]?.filename,
+                    uploaded_at: profile.documents[doc.key]?.uploaded_at,
+                  }}
+                  busy={uploadingDocumentKey === doc.key}
                   onFileSelected={handleFileSelected}
                 />
               ))}
@@ -601,17 +681,17 @@ export default function ProfilePage() {
             </div>
             <p className="text-xs text-center text-slate-500 mb-3">
               {profileCompletenessScore >= 80
-                ? 'Strong profile — good for most tenders'
-                : 'Add more documents for better tender matches'}
+                ? 'Strong profile backed by core details and required documents'
+                : 'Complete the missing core details for stronger matches'}
             </p>
             <div className="space-y-1.5 text-xs">
-              {INITIAL_DOCS.map((doc) => (
-                <div key={doc.key} className="flex items-center gap-2">
-                  <span className={docStates[doc.key]?.status === 'uploaded' ? 'text-green-500' : 'text-amber-500'}>
-                    {docStates[doc.key]?.status === 'uploaded' ? '✓' : '○'}
+              {profile.completeness.checks.map((check) => (
+                <div key={check.key} className="flex items-center gap-2">
+                  <span className={check.done ? 'text-green-500' : 'text-amber-500'}>
+                    {check.done ? '✓' : '○'}
                   </span>
-                  <span className={`truncate ${docStates[doc.key]?.status === 'uploaded' ? 'text-slate-600' : 'text-slate-400'}`}>
-                    {doc.label}
+                  <span className={`truncate ${check.done ? 'text-slate-600' : 'text-slate-400'}`}>
+                    {check.label}
                   </span>
                 </div>
               ))}
@@ -623,12 +703,12 @@ export default function ProfilePage() {
             <h3 className="font-semibold text-slate-800 text-sm mb-3">GeM Eligibility</h3>
             <div className="space-y-2.5">
               {[
-                { label: 'MSME Registered', pass: true },
-                { label: 'GST Active', pass: true },
-                { label: 'Turnover ≥ ₹20L', pass: true },
-                { label: '3+ Years Operation', pass: true },
-                { label: 'ISO Certified', pass: true },
-                { label: 'Bank Solvency', pass: docStates['bank']?.status === 'uploaded' },
+                { label: 'MSME Registered', pass: profile.documents.udyam.status === 'uploaded' },
+                { label: 'GST Active', pass: profile.documents.gst.status === 'uploaded' },
+                { label: 'Turnover >= Rs 20L', pass: profile.turnover >= 2000000 },
+                { label: '3+ Years Operation', pass: profile.years_in_operation >= 3 },
+                { label: 'ISO Certified', pass: profile.certifications.some((cert) => cert.toLowerCase().includes('iso')) },
+                { label: 'Experience Proof Uploaded', pass: profile.documents.experience.status === 'uploaded' },
               ].map((item) => (
                 <div key={item.label} className="flex items-center justify-between text-xs">
                   <span className="text-slate-600">{item.label}</span>
@@ -645,9 +725,9 @@ export default function ProfilePage() {
             <h3 className="font-semibold text-sm mb-3">Activity Summary</h3>
             <div className="space-y-2.5">
               {[
-                { label: 'Tenders Analyzed', value: '3' },
-                { label: 'Drafts Created', value: '1' },
-                { label: 'Tenders Saved', value: '0' },
+                { label: 'Tenders Analyzed', value: `${activityStats.analyzed}` },
+                { label: 'Drafts Created', value: `${activityStats.drafts}` },
+                { label: 'Tenders Saved', value: `${activityStats.saved}` },
                 { label: 'Documents Uploaded', value: `${uploadedCount}` },
               ].map((stat) => (
                 <div key={stat.label} className="flex justify-between text-xs">

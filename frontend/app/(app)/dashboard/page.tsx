@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { getTenders, getProfile, saveTender, unsaveTender, isTenderSaved, getProfileId, getSavedTenderIds } from '@/lib/mockApi';
+import { getTenders, getProfile, saveTender, unsaveTender, getProfileId, getTenderWorkflow } from '@/lib/mockApi';
+import { getRegistrationDisplayValue } from '@/lib/profileContract';
 import { formatDate, getDaysUntilDeadline, getMatchScoreMeta, getDeadlineLabel } from '@/lib/utils';
-import type { Tender, Profile, DashboardTab } from '@/types';
+import type { Tender, Profile, DashboardTab, TenderWorkflow } from '@/types';
 
 const TABS: { id: DashboardTab; label: string }[] = [
   { id: 'suggested', label: 'Suggested' },
@@ -34,15 +35,16 @@ function SkeletonCard() {
 
 function TenderCard({
   tender,
+  saved,
   onSaveToggle,
 }: {
   tender: Tender;
-  onSaveToggle: (id: string) => void;
+  saved: boolean;
+  onSaveToggle: (id: string) => Promise<void>;
 }) {
   const scoreMeta = getMatchScoreMeta(tender.match_score);
   const deadlineMeta = getDeadlineLabel(tender.deadline);
   const days = getDaysUntilDeadline(tender.deadline);
-  const saved = isTenderSaved(tender.id);
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-5 hover:border-blue-300 hover:shadow-md transition-all group">
@@ -100,7 +102,7 @@ function TenderCard({
           Analyze Tender
         </Link>
         <button
-          onClick={() => onSaveToggle(tender.id)}
+          onClick={() => void onSaveToggle(tender.id)}
           className={`px-3 py-2.5 rounded-lg border text-xs font-medium transition-all ${
             saved
               ? 'border-blue-300 text-blue-600 bg-blue-50 hover:bg-blue-100'
@@ -126,34 +128,89 @@ function TenderCard({
 export default function DashboardPage() {
   const [tenders, setTenders] = useState<Tender[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [workflow, setWorkflow] = useState<TenderWorkflow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tenderError, setTenderError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<DashboardTab>('suggested');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
-  const [savedIds, setSavedIds] = useState<Set<string>>(() => getSavedTenderIds());
 
   useEffect(() => {
-    const profileId = getProfileId();
-    const tendersFetch = profileId
-      ? getTenders(profileId).catch(() => ({ tenders: [] }))
-      : Promise.resolve({ tenders: [] });
-    const profileFetch = profileId
-      ? getProfile().catch(() => null)
-      : Promise.resolve(null);
-    Promise.all([tendersFetch, profileFetch]).then(([tendersData, profileData]) => {
-      setTenders(tendersData.tenders);
-      setProfile(profileData?.profile ?? null);
+    let active = true;
+
+    async function loadDashboard() {
+      const profileId = getProfileId();
+      if (!profileId) {
+        if (active) setLoading(false);
+        return;
+      }
+
+      const [tendersResult, profileResult, workflowResult] = await Promise.allSettled([
+        getTenders(profileId),
+        getProfile(),
+        getTenderWorkflow(),
+      ]);
+
+      if (!active) return;
+
+      if (tendersResult.status === 'fulfilled') {
+        setTenders(tendersResult.value.tenders);
+        setTenderError(null);
+      } else {
+        setTenders([]);
+        setTenderError(tendersResult.reason instanceof Error ? tendersResult.reason.message : 'Unable to load matched tenders');
+      }
+
+      if (profileResult.status === 'fulfilled') {
+        setProfile(profileResult.value.profile ?? null);
+      } else {
+        setProfile(null);
+      }
+
+      if (workflowResult.status === 'fulfilled') {
+        setWorkflow(workflowResult.value);
+      } else {
+        setWorkflow([]);
+      }
+
       setLoading(false);
-    });
+    }
+
+    loadDashboard();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
-  function handleSaveToggle(id: string) {
-    if (isTenderSaved(id)) {
-      unsaveTender(id);
-      setSavedIds((prev) => { const s = new Set(prev); s.delete(id); return s; });
-    } else {
-      saveTender(id);
-      setSavedIds((prev) => new Set([...prev, id]));
+  const workflowByTender = useMemo(() => (
+    Object.fromEntries(workflow.map((item) => [item.tender_id, item]))
+  ), [workflow]);
+
+  async function handleSaveToggle(id: string) {
+    const existing = workflowByTender[id];
+
+    try {
+      if (existing?.saved) {
+        await unsaveTender(id);
+        setWorkflow((prev) => {
+          const next = prev.filter((item) => item.tender_id !== id);
+          return existing
+            ? [...next, { ...existing, saved: false, updated_at: new Date().toISOString() }]
+            : next;
+        });
+      } else {
+        await saveTender(id);
+        setWorkflow((prev) => {
+          const next = prev.filter((entry) => entry.tender_id !== id);
+          return [...next, { ...(existing ?? { tender_id: id, profile_id: getProfileId(), analyzed_at: null, draft_generated_at: null, ready_at: null, updated_at: new Date().toISOString() }), saved: true, updated_at: new Date().toISOString() }];
+        });
+      }
+      setTenderError(null);
+      setActionError(null);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Unable to update tender state');
     }
   }
 
@@ -161,11 +218,16 @@ export default function DashboardPage() {
     let list = [...tenders];
 
     if (activeTab === 'saved') {
-      list = list.filter((t) => savedIds.has(t.id));
+      list = list.filter((t) => workflowByTender[t.id]?.saved);
     } else if (activeTab === 'analyzed') {
-      list = list.slice(0, 2);
+      list = list.filter((t) => Boolean(workflowByTender[t.id]?.analyzed_at));
     } else if (activeTab === 'draft_ready') {
-      list = list.slice(0, 1);
+      list = list.filter((t) => Boolean(workflowByTender[t.id]?.draft_generated_at));
+    } else {
+      list = list.filter((t) => {
+        const item = workflowByTender[t.id];
+        return !item?.saved && !item?.analyzed_at && !item?.draft_generated_at;
+      });
     }
 
     if (searchQuery) {
@@ -183,21 +245,14 @@ export default function DashboardPage() {
     }
 
     return list;
-  }, [tenders, activeTab, searchQuery, filterCategory, savedIds]);
+  }, [tenders, activeTab, searchQuery, filterCategory, workflowByTender]);
 
   const highMatchCount = tenders.filter((t) => t.match_score >= 80).length;
   const blockedCount = 0; // no blocking data available yet
   const urgentCount = tenders.filter((t) => getDaysUntilDeadline(t.deadline) <= 21).length;
+  const savedCount = workflow.filter((item) => item.saved).length;
 
-  const profileCompleteness = !profile ? 0 : Math.min(100, [
-    profile.company_name ? 20 : 0,
-    profile.category ? 15 : 0,
-    profile.turnover ? 15 : 0,
-    profile.years_in_operation ? 15 : 0,
-    (profile.certifications?.length ?? 0) > 0 ? 10 : 0,
-    profile.udyam_number ? 15 : 0,
-    profile.gst_number ? 10 : 0,
-  ].reduce((a, b) => a + b, 0));
+  const profileCompleteness = profile?.completeness?.score ?? 0;
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-8">
@@ -211,11 +266,11 @@ export default function DashboardPage() {
                 {profile ? `Welcome, ${profile.company_name.split(' ')[0]}` : 'Dashboard'}
               </h1>
               <p className="text-sm text-slate-500 mt-0.5">
-                {tenders.length} matching tenders found for your profile
+                {tenderError ? 'Tender matching is temporarily unavailable' : `${tenders.length} matching tenders found for your profile`}
               </p>
             </div>
             <Link
-              href="/onboarding"
+              href="/profile"
               className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1.5 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors"
             >
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -224,6 +279,12 @@ export default function DashboardPage() {
               Update Profile
             </Link>
           </div>
+
+          {actionError && (
+            <div className="border border-amber-200 bg-amber-50 text-amber-800 text-sm rounded-xl px-4 py-3">
+              {actionError}
+            </div>
+          )}
 
           {/* Quick insights */}
           <div className="grid grid-cols-3 gap-4">
@@ -306,12 +367,15 @@ export default function DashboardPage() {
                 {tab.label}
                 {tab.id === 'suggested' && !loading && (
                   <span className="ml-1.5 bg-blue-100 text-blue-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
-                    {tenders.length}
+                    {tenders.filter((t) => {
+                      const item = workflowByTender[t.id];
+                      return !item?.saved && !item?.analyzed_at && !item?.draft_generated_at;
+                    }).length}
                   </span>
                 )}
-                {tab.id === 'saved' && savedIds.size > 0 && (
+                {tab.id === 'saved' && savedCount > 0 && (
                   <span className="ml-1.5 bg-slate-100 text-slate-600 text-xs font-semibold px-1.5 py-0.5 rounded-full">
-                    {savedIds.size}
+                    {savedCount}
                   </span>
                 )}
               </button>
@@ -324,6 +388,16 @@ export default function DashboardPage() {
               <SkeletonCard />
               <SkeletonCard />
               <SkeletonCard />
+            </div>
+          ) : tenderError ? (
+            <div className="bg-white border border-red-200 rounded-xl p-12 text-center">
+              <div className="w-12 h-12 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-6 h-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m0 3.75h.008v.008H12v-.008zm9-3.758a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h3 className="font-semibold text-slate-700 mb-1">Unable to load matched tenders</h3>
+              <p className="text-sm text-slate-500">{tenderError}</p>
             </div>
           ) : filteredTenders.length === 0 ? (
             <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
@@ -353,6 +427,7 @@ export default function DashboardPage() {
                 <TenderCard
                   key={tender.id}
                   tender={tender}
+                  saved={Boolean(workflowByTender[tender.id]?.saved)}
                   onSaveToggle={handleSaveToggle}
                 />
               ))}
@@ -379,15 +454,15 @@ export default function DashboardPage() {
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between">
                   <span className="text-slate-500">GST</span>
-                  <span className="text-slate-700 font-mono">{profile.gst_number}</span>
+                  <span className="text-slate-700 font-mono">{getRegistrationDisplayValue(profile, 'gst')}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Udyam</span>
-                  <span className="text-slate-700 font-mono text-xs truncate ml-2">{profile.udyam_number}</span>
+                  <span className="text-slate-700 font-mono text-xs truncate ml-2">{getRegistrationDisplayValue(profile, 'udyam')}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Turnover</span>
-                  <span className="text-slate-700 font-semibold">₹{(profile.turnover / 100000).toFixed(1)}L</span>
+                  <span className="text-slate-700 font-semibold">Rs {(profile.turnover / 100000).toFixed(1)}L</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Experience</span>
@@ -428,12 +503,7 @@ export default function DashboardPage() {
               />
             </div>
             <div className="space-y-1.5 text-xs text-slate-600">
-              {[
-                { label: 'Company name & category', done: !!(profile?.company_name && profile?.category) },
-                { label: 'Turnover & experience', done: !!(profile?.turnover && profile?.years_in_operation) },
-                { label: 'GST & Udyam uploaded', done: !!(profile?.gst_number && profile?.udyam_number) },
-                { label: 'Certifications added', done: (profile?.certifications?.length ?? 0) > 0 },
-              ].map((item) => (
+              {(profile?.completeness?.checks ?? []).map((item) => (
                 <div key={item.label} className="flex items-center gap-2">
                   <span className={item.done ? 'text-green-500' : 'text-amber-500'}>{item.done ? '✓' : '○'}</span>
                   <span className={item.done ? '' : 'text-slate-400'}>{item.label}</span>
@@ -441,7 +511,7 @@ export default function DashboardPage() {
               ))}
             </div>
             <Link
-              href="/onboarding"
+              href="/profile"
               className="mt-4 block text-center text-xs text-blue-600 font-medium bg-blue-50 border border-blue-100 py-2 rounded-lg hover:bg-blue-100 transition-colors"
             >
               Complete Profile →

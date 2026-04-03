@@ -2,10 +2,6 @@
 
 /**
  * DocumentUploadRow — reusable file upload row component.
- *
- * Clicking Upload or Replace opens the native file chooser via a hidden input.
- * onFileSelected(key, file) is called on selection — wire this to a real upload
- * API call (e.g. PUT /api/profile/documents/:key) when the backend is ready.
  */
 
 import { useRef } from 'react';
@@ -14,6 +10,7 @@ export interface DocumentState {
   status: 'uploaded' | 'missing';
   filename?: string;
   date?: string;
+  uploaded_at?: string;
 }
 
 interface DocumentUploadRowProps {
@@ -21,10 +18,9 @@ interface DocumentUploadRowProps {
   label: string;
   required?: boolean;
   state: DocumentState;
-  /** Called with the selected File object — integrate real upload API here later */
   onFileSelected: (key: string, file: File) => void;
-  /** Accepted MIME types / extensions, e.g. ".pdf,.jpg,image/*" */
   accept?: string;
+  busy?: boolean;
 }
 
 export function DocumentUploadRow({
@@ -34,6 +30,7 @@ export function DocumentUploadRow({
   state,
   onFileSelected,
   accept = '.pdf,.jpg,.jpeg,.png',
+  busy = false,
 }: DocumentUploadRowProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -45,11 +42,19 @@ export function DocumentUploadRow({
     const file = e.target.files?.[0];
     if (!file) return;
     onFileSelected(docKey, file);
-    // Reset so re-selecting the same file fires onChange again
     e.target.value = '';
   }
 
   const uploaded = state.status === 'uploaded';
+  const uploadedDate = state.date || (
+    state.uploaded_at
+      ? new Date(state.uploaded_at).toLocaleDateString('en-IN', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric',
+        })
+      : undefined
+  );
 
   return (
     <div
@@ -57,7 +62,6 @@ export function DocumentUploadRow({
         uploaded ? 'border-slate-200 bg-white' : 'border-amber-200 bg-amber-50/50'
       }`}
     >
-      {/* Hidden file input */}
       <input
         ref={inputRef}
         type="file"
@@ -65,9 +69,9 @@ export function DocumentUploadRow({
         className="hidden"
         onChange={handleFileChange}
         aria-label={`Upload ${label}`}
+        disabled={busy}
       />
 
-      {/* Icon */}
       <div
         className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
           uploaded
@@ -86,7 +90,6 @@ export function DocumentUploadRow({
         )}
       </div>
 
-      {/* Label + metadata */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <p className="text-sm font-medium text-slate-800 truncate">{label}</p>
@@ -94,14 +97,13 @@ export function DocumentUploadRow({
         </div>
         {uploaded ? (
           <p className="text-xs text-slate-400 mt-0.5 truncate">
-            {state.filename ? `${state.filename} · ` : ''}Uploaded {state.date}
+            {state.filename ? `${state.filename} · ` : ''}Uploaded {uploadedDate}
           </p>
         ) : (
-          <p className="text-xs text-amber-600 mt-0.5">Not uploaded — may limit tender eligibility</p>
+          <p className="text-xs text-amber-600 mt-0.5">Not uploaded - may limit tender eligibility</p>
         )}
       </div>
 
-      {/* Status badge + action button */}
       <div className="flex items-center gap-2 flex-shrink-0">
         {uploaded ? (
           <>
@@ -111,9 +113,10 @@ export function DocumentUploadRow({
             <button
               type="button"
               onClick={handleButtonClick}
-              className="text-xs text-slate-500 hover:text-slate-700 px-2 py-1 rounded hover:bg-slate-100 transition-colors border border-slate-200"
+              disabled={busy}
+              className="text-xs text-slate-500 hover:text-slate-700 px-2 py-1 rounded hover:bg-slate-100 transition-colors border border-slate-200 disabled:opacity-60"
             >
-              Replace
+              {busy ? 'Uploading...' : 'Replace'}
             </button>
           </>
         ) : (
@@ -124,9 +127,10 @@ export function DocumentUploadRow({
             <button
               type="button"
               onClick={handleButtonClick}
-              className="text-xs text-blue-600 font-medium hover:text-blue-700 px-2 py-1 rounded border border-blue-200 hover:bg-blue-50 transition-colors"
+              disabled={busy}
+              className="text-xs text-blue-600 font-medium hover:text-blue-700 px-2 py-1 rounded border border-blue-200 hover:bg-blue-50 transition-colors disabled:opacity-60"
             >
-              Upload
+              {busy ? 'Uploading...' : 'Upload'}
             </button>
           </>
         )}

@@ -1,11 +1,59 @@
+export type ProfileDocumentKey =
+  | 'udyam'
+  | 'gst'
+  | 'pan'
+  | 'itr'
+  | 'iso'
+  | 'experience';
+
+export type ProfileDocumentStatus = 'uploaded' | 'missing';
+
+export interface ProfileDocumentDefinition {
+  key: ProfileDocumentKey;
+  label: string;
+  description: string;
+  required: boolean;
+}
+
+export interface ProfileDocument {
+  key: ProfileDocumentKey;
+  label: string;
+  description: string;
+  required: boolean;
+  status: ProfileDocumentStatus;
+  filename?: string;
+  uploaded_at?: string;
+  mime_type?: string;
+  size_bytes?: number;
+  storage_path?: string;
+}
+
+export type ProfileDocuments = Record<ProfileDocumentKey, ProfileDocument>;
+
+export interface ProfileCompletenessCheck {
+  key: string;
+  label: string;
+  done: boolean;
+}
+
+export interface ProfileCompleteness {
+  score: number;
+  completed: number;
+  total: number;
+  checks: ProfileCompletenessCheck[];
+}
+
 export interface Profile {
   company_name: string;
-  udyam_number: string;
-  gst_number: string;
+  udyam_number: string | null;
+  gst_number: string | null;
   category: string;
   turnover: number;
   years_in_operation: number;
   certifications: string[];
+  business_type?: string;
+  documents: ProfileDocuments;
+  completeness: ProfileCompleteness;
   past_projects?: ProfileProject[];
 }
 
@@ -23,10 +71,37 @@ export interface Tender {
   category: string;
   match_score: number;
   match_reason: string;
+  organization?: string | null;
+  ministry?: string | null;
+  office_name?: string | null;
+  bid_opening_datetime?: string | null;
+  bid_offer_validity_days?: number | null;
+  location?: string | null;
+  contract_period?: string | null;
+  full_text?: string;
+  requirements?: TenderRequirements;
+  documents_required?: string[];
+  penalty_clauses?: string[];
+  payment_terms?: string | null;
 }
 
 export interface TendersResponse {
   tenders: Tender[];
+}
+
+export interface TenderRequirements {
+  min_turnover: number | null;
+  min_years: number | null;
+  certifications: string[];
+  past_order_value: number | null;
+  msme_only: boolean;
+  msme_relaxation: boolean | null;
+  startup_relaxation: boolean | null;
+  past_experience_required: boolean | null;
+  emd_required: boolean | null;
+  emd_amount: number | null;
+  oem_authorization_required: boolean;
+  oem_turnover_required: boolean;
 }
 
 // Contract: POST /api/eligibility — status is "pass" | "fail" | "partial"
@@ -42,6 +117,7 @@ export interface Eligibility {
   score: number;
   total: number;
   criteria: EligibilityCriterion[];
+  missing_documents: EligibilityCriterion[];
   risk_flags: string[];
   recommendation: string;
 }
@@ -131,6 +207,39 @@ export interface Bid {
   checklist: ChecklistItem[];
 }
 
+export interface DraftRecord {
+  profile_id: string;
+  tender_id: string;
+  tender_title: string;
+  tender_department: string;
+  created_at: string;
+  updated_at: string;
+  bid: Bid;
+  original_bid: Bid;
+}
+
+export interface DraftResponse {
+  draft: DraftRecord;
+}
+
+export interface DraftListResponse {
+  drafts: DraftRecord[];
+}
+
+export interface TenderWorkflow {
+  profile_id: string;
+  tender_id: string;
+  saved: boolean;
+  analyzed_at: string | null;
+  draft_generated_at: string | null;
+  ready_at: string | null;
+  updated_at: string;
+}
+
+export interface TenderWorkflowResponse {
+  items: TenderWorkflow[];
+}
+
 export type DashboardTab = 'suggested' | 'saved' | 'analyzed' | 'draft_ready';
 
 // ─── Tender Detail (client-side extended data, no dedicated backend endpoint yet) ─
@@ -178,8 +287,7 @@ export interface ProfileUploadPayload {
   turnover: number;
   years_in_operation: number;
   certifications?: string[];
-  udyam?: File | null;
-  gst?: File | null;
+  documents?: Partial<Record<ProfileDocumentKey, File | null>>;
 }
 
 // Local form state for the onboarding page (superset of ProfileUploadPayload)
