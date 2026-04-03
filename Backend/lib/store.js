@@ -23,7 +23,7 @@ async function connect() {
   if (connectError) throw connectError
   if (!MONGODB_URL) throw new Error('MONGODB_URL is not set in .env')
   try {
-    client = new MongoClient(MONGODB_URL)
+    client = new MongoClient(MONGODB_URL, { serverSelectionTimeoutMS: 8000 })
     await client.connect()
     db = client.db(DB_NAME)
     connectError = null

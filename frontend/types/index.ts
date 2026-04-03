@@ -18,7 +18,7 @@ export interface Tender {
   id: string;
   title: string;
   department: string;
-  value: string;
+  value: string | null;
   deadline: string;
   category: string;
   match_score: number;
