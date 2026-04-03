@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { getTenders, getProfile, saveTender, unsaveTender, isTenderSaved, getProfileId } from '@/lib/mockApi';
+import { getTenders, getProfile, saveTender, unsaveTender, isTenderSaved, getProfileId, getSavedTenderIds } from '@/lib/mockApi';
 import { formatDate, getDaysUntilDeadline, getMatchScoreMeta, getDeadlineLabel } from '@/lib/utils';
 import type { Tender, Profile, DashboardTab } from '@/types';
 
@@ -130,7 +130,7 @@ export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<DashboardTab>('suggested');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
-  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+  const [savedIds, setSavedIds] = useState<Set<string>>(() => getSavedTenderIds());
 
   useEffect(() => {
     const profileId = getProfileId();
@@ -186,10 +186,18 @@ export default function DashboardPage() {
   }, [tenders, activeTab, searchQuery, filterCategory, savedIds]);
 
   const highMatchCount = tenders.filter((t) => t.match_score >= 80).length;
-  const blockedCount = 1; // mock: tenders blocked by missing docs
+  const blockedCount = 0; // no blocking data available yet
   const urgentCount = tenders.filter((t) => getDaysUntilDeadline(t.deadline) <= 21).length;
 
-  const profileCompleteness = 72; // mock completeness
+  const profileCompleteness = !profile ? 0 : Math.min(100, [
+    profile.company_name ? 20 : 0,
+    profile.category ? 15 : 0,
+    profile.turnover ? 15 : 0,
+    profile.years_in_operation ? 15 : 0,
+    (profile.certifications?.length ?? 0) > 0 ? 10 : 0,
+    profile.udyam_number ? 15 : 0,
+    profile.gst_number ? 10 : 0,
+  ].reduce((a, b) => a + b, 0));
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-8">
@@ -420,18 +428,17 @@ export default function DashboardPage() {
               />
             </div>
             <div className="space-y-1.5 text-xs text-slate-600">
-              <div className="flex items-center gap-2">
-                <span className="text-green-500">✓</span> GST &amp; Udyam uploaded
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-green-500">✓</span> Turnover &amp; experience set
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-amber-500">○</span> <span className="text-slate-400">Bank solvency certificate missing</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-amber-500">○</span> <span className="text-slate-400">Work completion certificates needed</span>
-              </div>
+              {[
+                { label: 'Company name & category', done: !!(profile?.company_name && profile?.category) },
+                { label: 'Turnover & experience', done: !!(profile?.turnover && profile?.years_in_operation) },
+                { label: 'GST & Udyam uploaded', done: !!(profile?.gst_number && profile?.udyam_number) },
+                { label: 'Certifications added', done: (profile?.certifications?.length ?? 0) > 0 },
+              ].map((item) => (
+                <div key={item.label} className="flex items-center gap-2">
+                  <span className={item.done ? 'text-green-500' : 'text-amber-500'}>{item.done ? '✓' : '○'}</span>
+                  <span className={item.done ? '' : 'text-slate-400'}>{item.label}</span>
+                </div>
+              ))}
             </div>
             <Link
               href="/onboarding"
@@ -450,7 +457,7 @@ export default function DashboardPage() {
               <span className="text-xs font-semibold text-blue-100 uppercase tracking-wide">Pro Tip</span>
             </div>
             <p className="text-xs text-blue-200 leading-relaxed">
-              Upload your bank solvency certificate to unlock 2 additional tenders you currently qualify for.
+              Keep your profile up to date — turnover, certifications and uploaded documents directly affect your tender match scores.
             </p>
           </div>
         </div>

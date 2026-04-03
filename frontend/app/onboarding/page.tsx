@@ -14,8 +14,18 @@ const CERTIFICATION_OPTIONS = [
 ];
 
 const CATEGORY_OPTIONS = [
-  'IT Services', 'Software Development', 'Consulting', 'Digital Marketing',
-  'Cloud Services', 'Cybersecurity', 'Hardware Supply', 'Training & Education',
+  'IT Services',
+  'Software Development',
+  'Consulting',
+  'Consulting / Engineering Design',
+  'Architecture / BIM Services',
+  'Civil / Infrastructure Engineering',
+  'Digital Marketing',
+  'Cloud Services',
+  'Cybersecurity',
+  'Hardware Supply',
+  'Manpower / Staffing Services',
+  'Training & Education',
   'Other',
 ];
 
@@ -113,8 +123,13 @@ export default function OnboardingPage() {
       udyam: docFiles['udyam'] ?? null,
       gst: docFiles['gst'] ?? null,
     };
-    await uploadProfile(payload);
-    router.push('/dashboard');
+    try {
+      await uploadProfile(payload);
+      router.push('/dashboard');
+    } catch (err) {
+      console.error('Profile upload failed:', err);
+      setSubmitting(false);
+    }
   }
 
   return (

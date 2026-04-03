@@ -29,6 +29,22 @@ function buildDocMap(items: typeof INITIAL_DOCS): DocMap {
   return Object.fromEntries(items.map((d) => [d.key, d.state]));
 }
 
+const DOC_STATES_KEY = 'gem_doc_states';
+
+function loadDocStatesFromStorage(): DocMap {
+  if (typeof window === 'undefined') return {};
+  try {
+    return JSON.parse(localStorage.getItem(DOC_STATES_KEY) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function saveDocStatesToStorage(states: DocMap) {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(DOC_STATES_KEY, JSON.stringify(states));
+}
+
 const EMPTY_PROJECT_FORM = {
   title: '', client: '', industry: '', duration: '', value: '',
   scope_of_work: '', technologies: '', outcome: '', client_reference: '',
@@ -50,17 +66,28 @@ export default function ProfilePage() {
   const [projectForm, setProjectForm] = useState(EMPTY_PROJECT_FORM);
 
   useEffect(() => {
+    // Seed doc states from localStorage first so previously-uploaded docs survive refresh
+    const saved = loadDocStatesFromStorage();
+    if (Object.keys(saved).length > 0) {
+      setDocStates((prev) => ({ ...prev, ...saved }));
+    }
+
     getProfile().then((res) => {
       setProfile(res.profile);
       setEditData(res.profile);
       setProfileProjects(res.profile.past_projects ?? []);
-      // Hydrate doc status from backend: udyam/gst are marked uploaded when
-      // the backend successfully extracted registration numbers from them.
-      setDocStates((prev) => ({
-        ...prev,
-        ...(res.profile.udyam_number ? { udyam: { status: 'uploaded', filename: 'Udyam Certificate' } } : {}),
-        ...(res.profile.gst_number   ? { gst:   { status: 'uploaded', filename: 'GST Certificate'   } } : {}),
-      }));
+      // Backend is authoritative for udyam/gst (extracted numbers prove upload success).
+      // Merge backend state on top of localStorage so backend truth wins for those two.
+      setDocStates((prev) => {
+        const next = { ...prev };
+        if (res.profile.udyam_number) {
+          next.udyam = { status: 'uploaded', filename: prev.udyam?.filename || 'Udyam Certificate' };
+        }
+        if (res.profile.gst_number) {
+          next.gst = { status: 'uploaded', filename: prev.gst?.filename || 'GST Certificate' };
+        }
+        return next;
+      });
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
@@ -121,10 +148,15 @@ export default function ProfilePage() {
     const today = new Date().toLocaleDateString('en-IN', {
       day: '2-digit', month: 'short', year: 'numeric',
     });
-    setDocStates((prev) => ({
-      ...prev,
-      [key]: { status: 'uploaded', filename: file.name, date: today },
-    }));
+    setDocStates((prev) => {
+      const next = {
+        ...prev,
+        [key]: { status: 'uploaded' as const, filename: file.name, date: today },
+      };
+      // Persist all doc states so they survive page refresh
+      saveDocStatesToStorage(next);
+      return next;
+    });
   }
 
   const uploadedCount = Object.values(docStates).filter((s) => s.status === 'uploaded').length;

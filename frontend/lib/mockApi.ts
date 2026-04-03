@@ -12,7 +12,6 @@
  */
 
 import {
-  MOCK_TENDERS,
   MOCK_TENDER_DETAILS,
 } from '@/lib/mockData';
 import type {
@@ -89,8 +88,25 @@ export function saveDraftToStore(
   localStorage.setItem(DRAFTS_KEY, JSON.stringify(rest));
 }
 
-// Saved tenders stored in memory (simulates session state)
-const savedTenderIds = new Set<string>();
+// Saved tenders — persisted to localStorage so they survive page reload
+const SAVED_TENDERS_KEY = 'gem_saved_tenders';
+
+function loadSavedIds(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = localStorage.getItem(SAVED_TENDERS_KEY);
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function persistSavedIds(ids: Set<string>) {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(SAVED_TENDERS_KEY, JSON.stringify([...ids]));
+}
+
+const savedTenderIds: Set<string> = loadSavedIds();
 
 // ─── POST /api/profile ────────────────────────────────────────────────────────
 export async function uploadProfile(
@@ -144,7 +160,7 @@ export async function getTenders(
   profileId: string
 ): Promise<TendersResponse> {
   const id = profileId || getProfileId();
-  if (!id) return MOCK_TENDERS as TendersResponse;
+  if (!id) return { tenders: [] };
   const res = await fetch(`${API_BASE}/api/tenders/${id}`);
   if (!res.ok) throw new Error(`Tenders fetch failed: ${res.status}`);
   return res.json();
@@ -199,19 +215,26 @@ export async function generateBid(
 // ─── Client-side save/unsave ──────────────────────────────────────────────────
 export async function saveTender(id: string): Promise<{ success: boolean }> {
   savedTenderIds.add(id);
+  persistSavedIds(savedTenderIds);
   return { success: true };
 }
 
 export async function unsaveTender(id: string): Promise<{ success: boolean }> {
   savedTenderIds.delete(id);
+  persistSavedIds(savedTenderIds);
   return { success: true };
 }
 
 export async function getSavedTenders(): Promise<TendersResponse> {
-  const tenders = MOCK_TENDERS.tenders.filter((t) => savedTenderIds.has(t.id));
-  return { tenders };
+  // Saved tenders are not a separate server resource; the dashboard filters by savedTenderIds.
+  // Return an empty list here — this function is not used in the live dashboard flow.
+  return { tenders: [] };
 }
 
 export function isTenderSaved(id: string): boolean {
   return savedTenderIds.has(id);
+}
+
+export function getSavedTenderIds(): Set<string> {
+  return new Set(savedTenderIds);
 }
