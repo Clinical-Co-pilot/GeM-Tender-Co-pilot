@@ -12,7 +12,6 @@ GeM Tender Copilot helps Micro, Small & Medium Enterprises find, evaluate, and w
 
 [![Live Demo](https://img.shields.io/badge/🌐%20Live%20Demo-Visit%20Now-blue?style=for-the-badge)](https://gem-tender-co-pilot.vercel.app)
 [![Backend API](https://img.shields.io/badge/🔧%20Backend%20API-Live-green?style=for-the-badge)](https://gem-tender-co-pilot.onrender.com/health)
-[![License](https://img.shields.io/badge/License-Proprietary-red?style=for-the-badge)]()
 
 </div>
 
