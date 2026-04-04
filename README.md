@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="https://img.shields.io/badge/Built%20at-VibeCon%202026-blue?style=for-the-badge" />
-<img src="https://img.shields.io/badge/Powered%20by-Gemini%20AI-orange?style=for-the-badge&logo=google" />
 <img src="https://img.shields.io/badge/For-Indian%20MSMEs-green?style=for-the-badge" />
 
 # 🏛️ GeM Tender Copilot
