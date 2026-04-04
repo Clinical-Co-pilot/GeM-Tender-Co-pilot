@@ -22,7 +22,7 @@ export default function LandingPage() {
             <a href="#who-its-for" className="hover:text-slate-900 transition-colors">Who it&apos;s for</a>
           </nav>
           <Link
-            href="/onboarding"
+            href="/auth"
             className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
           >
             Get Started
@@ -46,7 +46,7 @@ export default function LandingPage() {
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <Link
-              href="/onboarding"
+              href="/auth"
               className="inline-flex items-center justify-center gap-2 bg-white text-blue-700 font-semibold px-6 py-3 rounded-lg hover:bg-blue-50 transition-colors text-base"
             >
               Get Started Free
@@ -304,7 +304,7 @@ export default function LandingPage() {
             Set up your company profile in under 5 minutes and see tenders matched to your business today.
           </p>
           <Link
-            href="/onboarding"
+            href="/auth"
             className="inline-flex items-center gap-2 bg-white text-blue-700 font-semibold px-8 py-3.5 rounded-lg hover:bg-blue-50 transition-colors text-base"
           >
             Get Started — It&apos;s Free

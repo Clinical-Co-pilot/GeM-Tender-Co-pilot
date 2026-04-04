@@ -236,6 +236,32 @@ async function scoreAllTenders(profile) {
   return enriched.sort((a, b) => b.match_score - a.match_score)
 }
 
+// GET /api/tenders/all?profile_id=... — returns ALL tenders scored (no score filter)
+router.get('/all', async (req, res) => {
+  try {
+    const profileId = req.query.profile_id
+    if (!profileId) {
+      const all = tenders.map((tender) => ({ ...tender, match_score: 0, match_reason: 'Login to see your match score.' }))
+      return res.json({ tenders: all })
+    }
+
+    const profile = await getProfileById(profileId)
+    if (!profile) {
+      const all = tenders.map((tender) => ({ ...tender, match_score: 0, match_reason: 'Profile not found.' }))
+      return res.json({ tenders: all })
+    }
+
+    const scored = tenders
+      .map((tender) => deterministicScoreTender(profile, tender))
+      .sort((a, b) => b.match_score - a.match_score)
+
+    return res.json({ tenders: scored })
+  } catch (err) {
+    console.error('All tenders error:', err)
+    res.status(500).json({ error: 'Failed to fetch all tenders', details: err.message })
+  }
+})
+
 // GET /api/tenders/detail?id=... — uses query param because tender IDs contain slashes
 router.get('/detail', async (req, res) => {
   const tender = tenders.find((item) => item.id === req.query.id)

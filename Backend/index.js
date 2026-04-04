@@ -6,6 +6,7 @@ const cors = requireFromDeps('cors')
 requireFromDeps('dotenv').config()
 
 const { connect, getStorageMode } = require('./lib/store')
+const authRoutes = require('./routes/auth')
 const profileRoutes = require('./routes/profile')
 const tenderRoutes = require('./routes/tenders')
 const eligibilityRoutes = require('./routes/eligibility')
@@ -33,6 +34,7 @@ app.get('/health', async (req, res) => {
   }
 })
 
+app.use('/api/auth', authRoutes)
 app.use('/api/profile', profileRoutes)
 app.use('/api/tenders', tenderRoutes)
 app.use('/api/eligibility', eligibilityRoutes)

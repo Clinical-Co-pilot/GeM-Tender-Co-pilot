@@ -21,6 +21,8 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 const PROFILE_ID_KEY = 'gem_profile_id';
 const COMPANY_NAME_KEY = 'gem_company_name';
+const USER_ID_KEY = 'gem_user_id';
+const USER_EMAIL_KEY = 'gem_user_email';
 
 export function getProfileId(): string {
   if (typeof window === 'undefined') return '';
@@ -44,6 +46,78 @@ function setCompanyName(name: string) {
   }
 }
 
+export function getUserId(): string {
+  if (typeof window === 'undefined') return '';
+  return localStorage.getItem(USER_ID_KEY) || '';
+}
+
+export function getUserEmail(): string {
+  if (typeof window === 'undefined') return '';
+  return localStorage.getItem(USER_EMAIL_KEY) || '';
+}
+
+export function isLoggedIn(): boolean {
+  return !!getUserId();
+}
+
+export function logout(): void {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(USER_ID_KEY);
+  localStorage.removeItem(USER_EMAIL_KEY);
+  localStorage.removeItem(PROFILE_ID_KEY);
+  localStorage.removeItem(COMPANY_NAME_KEY);
+}
+
+export async function signupUser(email: string, password: string): Promise<{ user_id: string; email: string }> {
+  const res = await fetch(`${API_BASE}/api/auth/signup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || 'Signup failed');
+  }
+  const data = await res.json();
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(USER_ID_KEY, data.user_id);
+    localStorage.setItem(USER_EMAIL_KEY, data.email);
+  }
+  return data;
+}
+
+export async function loginUser(email: string, password: string): Promise<{ user_id: string; email: string; profile_id: string | null }> {
+  const res = await fetch(`${API_BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || 'Login failed');
+  }
+  const data = await res.json();
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(USER_ID_KEY, data.user_id);
+    localStorage.setItem(USER_EMAIL_KEY, data.email);
+    if (data.profile_id) {
+      localStorage.setItem(PROFILE_ID_KEY, data.profile_id);
+      // Fetch and cache company name so AppNav shows it immediately
+      try {
+        const profileRes = await fetch(`${API_BASE}/api/profile/${data.profile_id}`);
+        if (profileRes.ok) {
+          const profileData = await profileRes.json();
+          const name = profileData.profile?.company_name;
+          if (name) localStorage.setItem(COMPANY_NAME_KEY, name);
+        }
+      } catch {
+        // non-critical — AppNav will show fallback
+      }
+    }
+  }
+  return data;
+}
+
 export const MOCK_PROFILE_ID = '';
 
 export async function uploadProfile(
@@ -58,6 +132,9 @@ export async function uploadProfile(
   if (payload.certifications?.length) {
     form.append('certifications', JSON.stringify(payload.certifications));
   }
+
+  const userId = getUserId();
+  if (userId) form.append('user_id', userId);
 
   for (const [key, file] of Object.entries(payload.documents ?? {})) {
     if (file) form.append(key, file);
@@ -115,6 +192,14 @@ export async function uploadProfileDocument(
   });
 
   if (!res.ok) throw new Error(`Document upload failed: ${res.status}`);
+  return res.json();
+}
+
+export async function getAllTenders(): Promise<TendersResponse> {
+  const profileId = getProfileId();
+  const query = profileId ? `?profile_id=${profileId}` : '';
+  const res = await fetch(`${API_BASE}/api/tenders/all${query}`);
+  if (!res.ok) throw new Error(`All tenders fetch failed: ${res.status}`);
   return res.json();
 }
 

@@ -240,7 +240,7 @@ export interface TenderWorkflowResponse {
   items: TenderWorkflow[];
 }
 
-export type DashboardTab = 'suggested' | 'saved' | 'analyzed' | 'draft_ready';
+export type DashboardTab = 'suggested' | 'saved' | 'analyzed' | 'draft_ready' | 'browse_all';
 
 // ─── Tender Detail (client-side extended data, no dedicated backend endpoint yet) ─
 export interface TenderEMD {

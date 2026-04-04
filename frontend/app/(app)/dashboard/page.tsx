@@ -2,16 +2,58 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { getTenders, getProfile, saveTender, unsaveTender, getProfileId, getTenderWorkflow } from '@/lib/mockApi';
+import { getTenders, getAllTenders, getProfile, saveTender, unsaveTender, getProfileId, getTenderWorkflow } from '@/lib/mockApi';
 import { getRegistrationDisplayValue } from '@/lib/profileContract';
 import { formatDate, getDaysUntilDeadline, getMatchScoreMeta, getDeadlineLabel } from '@/lib/utils';
 import type { Tender, Profile, DashboardTab, TenderWorkflow } from '@/types';
+
+const CATEGORY_OPTIONS = [
+  'IT Services',
+  'Software Development',
+  'Consulting',
+  'Consulting / Engineering Design',
+  'Architecture / BIM Services',
+  'Civil / Infrastructure Engineering',
+  'Digital Marketing',
+  'Cloud Services',
+  'Cybersecurity',
+  'Hardware Supply',
+  'Manpower / Staffing Services',
+  'Training & Education',
+  'Other',
+];
+
+// Keywords per category for fuzzy matching against tender title/category/full_text
+const CATEGORY_KEYWORDS: Record<string, string[]> = {
+  'IT Services': ['computer', 'desktop', 'laptop', 'printer', 'it service', 'information technology', 'software', 'digital', 'electronic', 'calculator'],
+  'Software Development': ['software', 'application', 'development', 'programming', 'system', 'platform', 'app'],
+  'Consulting': ['consulting', 'consultant', 'advisory', 'milestone', 'deliverable', 'hiring of consultant'],
+  'Consulting / Engineering Design': ['consulting', 'engineering', 'design', 'bim', 'architecture', 'arch', 'milestone'],
+  'Architecture / BIM Services': ['architecture', 'bim', 'building information', 'design', 'arch'],
+  'Civil / Infrastructure Engineering': ['civil', 'infrastructure', 'engineering', 'construction', 'excavator', 'crawler', 'hydraulic', 'tanker', 'trailer', 'mining', 'hopper'],
+  'Digital Marketing': ['digital', 'marketing', 'media', 'advertising', 'hoarding', 'bsnl', 'renting of space'],
+  'Cloud Services': ['cloud', 'hosting', 'server', 'azure', 'aws', 'saas', 'paas'],
+  'Cybersecurity': ['cyber', 'security', 'network security', 'firewall', 'antivirus'],
+  'Hardware Supply': ['hardware', 'supply', 'equipment', 'spare', 'part', 'slip ring', 'laser', 'sensor', 'analyser', 'thermometer', 'ventilator', 'autoclave', 'dryer', 'motor', 'drive', 'encoder', 'controller', 'index plate', 'caution plate', 'stapler', 'punch', 'stationery', 'dental', 'icu', 'gas analyser', 'air dryer'],
+  'Manpower / Staffing Services': ['manpower', 'staffing', 'outsourcing', 'labour', 'worker', 'skilled', 'graduate', 'finance', 'accounts', 'handling', 'transport', 'minimum wage'],
+  'Training & Education': ['training', 'education', 'learning', 'workshop', 'course'],
+  'Other': [],
+};
+
+function matchesCategoryFilter(tender: Tender, category: string): boolean {
+  if (!category || category === 'Other') return true;
+  const keywords = CATEGORY_KEYWORDS[category] ?? [];
+  if (keywords.length === 0) return true;
+  const haystack = `${tender.title} ${tender.category} ${(tender as Tender & { full_text?: string }).full_text ?? ''}`.toLowerCase();
+  return keywords.some((kw) => haystack.includes(kw.toLowerCase()));
+}
 
 const TABS: { id: DashboardTab; label: string }[] = [
   { id: 'suggested', label: 'Suggested' },
   { id: 'saved', label: 'Saved' },
   { id: 'analyzed', label: 'Analyzed' },
   { id: 'draft_ready', label: 'Draft Ready' },
+  { id: 'browse_all', label: 'Browse All' },
 ];
 
 function SkeletonCard() {
@@ -55,7 +97,7 @@ function TenderCard({
             {tender.title}
           </h3>
         </div>
-        <div className={`flex-shrink-0 flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full border ${scoreMeta.color} ${scoreMeta.bg} ${scoreMeta.border}`}>
+        <div className={`shrink-0 flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full border ${scoreMeta.color} ${scoreMeta.bg} ${scoreMeta.border}`}>
           <span>{tender.match_score}%</span>
         </div>
       </div>
@@ -127,6 +169,9 @@ function TenderCard({
 
 export default function DashboardPage() {
   const [tenders, setTenders] = useState<Tender[]>([]);
+  const [allTenders, setAllTenders] = useState<Tender[]>([]);
+  const [allTendersLoading, setAllTendersLoading] = useState(false);
+  const [allTendersFetched, setAllTendersFetched] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [workflow, setWorkflow] = useState<TenderWorkflow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -146,10 +191,11 @@ export default function DashboardPage() {
         return;
       }
 
-      const [tendersResult, profileResult, workflowResult] = await Promise.allSettled([
+      const [tendersResult, profileResult, workflowResult, allTendersResult] = await Promise.allSettled([
         getTenders(profileId),
         getProfile(),
         getTenderWorkflow(),
+        getAllTenders(),
       ]);
 
       if (!active) return;
@@ -174,6 +220,11 @@ export default function DashboardPage() {
         setWorkflow([]);
       }
 
+      if (allTendersResult.status === 'fulfilled') {
+        setAllTenders(allTendersResult.value.tenders);
+        setAllTendersFetched(true);
+      }
+
       setLoading(false);
     }
 
@@ -187,6 +238,46 @@ export default function DashboardPage() {
   const workflowByTender = useMemo(() => (
     Object.fromEntries(workflow.map((item) => [item.tender_id, item]))
   ), [workflow]);
+
+  async function loadAllTenders() {
+    if (allTendersFetched) return;
+    setAllTendersLoading(true);
+    try {
+      const res = await getAllTenders();
+      setAllTenders(res.tenders);
+      setAllTendersFetched(true);
+    } catch {
+      setAllTenders([]);
+    } finally {
+      setAllTendersLoading(false);
+    }
+  }
+
+  function handleTabChange(tab: DashboardTab) {
+    setActiveTab(tab);
+    setSearchQuery('');
+    setFilterCategory('');
+    if (tab === 'browse_all') {
+      void loadAllTenders();
+    }
+  }
+
+  // Search and category filter are mutually exclusive for clarity
+  function handleSearchChange(value: string) {
+    setSearchQuery(value);
+    if (value) setFilterCategory(''); // clear dropdown when typing
+    if (value && !allTendersFetched && !allTendersLoading) {
+      void loadAllTenders();
+    }
+  }
+
+  function handleCategoryChange(value: string) {
+    setFilterCategory(value);
+    if (value) setSearchQuery(''); // clear search when picking category
+    if (value && !allTendersFetched && !allTendersLoading) {
+      void loadAllTenders();
+    }
+  }
 
   async function handleSaveToggle(id: string) {
     const existing = workflowByTender[id];
@@ -214,43 +305,65 @@ export default function DashboardPage() {
     }
   }
 
+  // When searching or filtering, search across all tenders (not just matched ones)
+  const isFiltering = Boolean(searchQuery || filterCategory);
+  const browseBase = allTenders.length > 0 ? allTenders : tenders; // fallback if allTenders not yet loaded
+
   const filteredTenders = useMemo(() => {
-    let list = [...tenders];
+    let list: Tender[];
 
     if (activeTab === 'saved') {
-      list = list.filter((t) => workflowByTender[t.id]?.saved);
+      list = [...tenders].filter((t) => workflowByTender[t.id]?.saved);
     } else if (activeTab === 'analyzed') {
-      list = list.filter((t) => Boolean(workflowByTender[t.id]?.analyzed_at));
+      list = [...tenders].filter((t) => Boolean(workflowByTender[t.id]?.analyzed_at));
     } else if (activeTab === 'draft_ready') {
-      list = list.filter((t) => Boolean(workflowByTender[t.id]?.draft_generated_at));
+      list = [...tenders].filter((t) => Boolean(workflowByTender[t.id]?.draft_generated_at));
+    } else if (activeTab === 'browse_all' || isFiltering) {
+      // Browse All + any search/filter → use full tender list
+      list = [...browseBase];
     } else {
-      list = list.filter((t) => {
+      // Suggested: exclude saved/analyzed/drafted
+      list = [...tenders].filter((t) => {
         const item = workflowByTender[t.id];
         return !item?.saved && !item?.analyzed_at && !item?.draft_generated_at;
       });
     }
 
     if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      list = list.filter(
-        (t) =>
-          t.title.toLowerCase().includes(q) ||
-          t.department.toLowerCase().includes(q) ||
-          t.category.toLowerCase().includes(q)
+      const q = searchQuery.toLowerCase().trim();
+      // Check if query matches a business category name → use keyword expansion
+      const matchedCat = CATEGORY_OPTIONS.find(
+        (cat) => cat.toLowerCase().includes(q) || q.includes(cat.toLowerCase().split(' ')[0])
       );
+      if (matchedCat) {
+        list = list.filter((t) => matchesCategoryFilter(t, matchedCat));
+      } else {
+        // Regular substring search across title, department, category, full_text, match_reason
+        list = list.filter(
+          (t) =>
+            t.title.toLowerCase().includes(q) ||
+            t.department.toLowerCase().includes(q) ||
+            t.category.toLowerCase().includes(q) ||
+            (t.full_text ?? '').toLowerCase().includes(q) ||
+            (t.match_reason ?? '').toLowerCase().includes(q)
+        );
+      }
     }
 
     if (filterCategory) {
-      list = list.filter((t) => t.category === filterCategory);
+      list = list.filter((t) => matchesCategoryFilter(t, filterCategory));
     }
 
     return list;
-  }, [tenders, activeTab, searchQuery, filterCategory, workflowByTender]);
+  }, [tenders, browseBase, activeTab, isFiltering, searchQuery, filterCategory, workflowByTender]);
+
 
   const highMatchCount = tenders.filter((t) => t.match_score >= 80).length;
   const blockedCount = 0; // no blocking data available yet
   const urgentCount = tenders.filter((t) => getDaysUntilDeadline(t.deadline) <= 21).length;
   const savedCount = workflow.filter((item) => item.saved).length;
+  const analyzedCount = workflow.filter((item) => Boolean(item.analyzed_at)).length;
+  const draftReadyCount = workflow.filter((item) => Boolean(item.draft_generated_at)).length;
 
   const profileCompleteness = profile?.completeness?.score ?? 0;
 
@@ -329,27 +442,45 @@ export default function DashboardPage() {
           {/* Search + Filter */}
           <div className="flex gap-3">
             <div className="flex-1 relative">
-              <svg className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <svg className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
               </svg>
               <input
                 type="text"
                 placeholder="Search tenders by title, department, category…"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white placeholder-slate-400"
+                onChange={(e) => handleSearchChange(e.target.value)}
+                className="w-full pl-10 pr-9 py-3 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white placeholder-slate-400 text-slate-800 shadow-sm"
               />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
             </div>
-            <select
-              value={filterCategory}
-              onChange={(e) => setFilterCategory(e.target.value)}
-              className="px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-slate-600 min-w-36"
-            >
-              <option value="">All Categories</option>
-              <option value="IT Services">IT Services</option>
-              <option value="Software Development">Software Development</option>
-              <option value="Consulting">Consulting</option>
-            </select>
+            <div className="relative">
+              <svg className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z" />
+              </svg>
+              <select
+                value={filterCategory}
+                onChange={(e) => handleCategoryChange(e.target.value)}
+                className="pl-9 pr-8 py-3 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-slate-700 shadow-sm appearance-none min-w-52 font-medium cursor-pointer"
+              >
+                <option value="">All Categories</option>
+                {CATEGORY_OPTIONS.map((cat) => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+              <svg className="w-4 h-4 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+              </svg>
+            </div>
           </div>
 
           {/* Tabs */}
@@ -357,7 +488,7 @@ export default function DashboardPage() {
             {TABS.map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => handleTabChange(tab.id)}
                 className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === tab.id
                     ? 'border-blue-600 text-blue-700'
@@ -373,9 +504,19 @@ export default function DashboardPage() {
                     }).length}
                   </span>
                 )}
-                {tab.id === 'saved' && savedCount > 0 && (
-                  <span className="ml-1.5 bg-slate-100 text-slate-600 text-xs font-semibold px-1.5 py-0.5 rounded-full">
+                {tab.id === 'saved' && !loading && savedCount > 0 && (
+                  <span className="ml-1.5 bg-blue-100 text-blue-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
                     {savedCount}
+                  </span>
+                )}
+                {tab.id === 'analyzed' && !loading && analyzedCount > 0 && (
+                  <span className="ml-1.5 bg-blue-100 text-blue-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
+                    {analyzedCount}
+                  </span>
+                )}
+                {tab.id === 'draft_ready' && !loading && draftReadyCount > 0 && (
+                  <span className="ml-1.5 bg-blue-100 text-blue-700 text-xs font-semibold px-1.5 py-0.5 rounded-full">
+                    {draftReadyCount}
                   </span>
                 )}
               </button>
@@ -383,7 +524,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Tender cards */}
-          {loading ? (
+          {loading || allTendersLoading ? (
             <div className="space-y-4">
               <SkeletonCard />
               <SkeletonCard />
@@ -409,12 +550,12 @@ export default function DashboardPage() {
               <h3 className="font-semibold text-slate-700 mb-1">No tenders found</h3>
               <p className="text-sm text-slate-500">
                 {activeTab === 'saved'
-                  ? 'Save tenders from the Suggested tab to track them here.'
+                  ? 'Save tenders from the Suggested or Browse All tab to track them here.'
                   : 'Try adjusting your search or filters.'}
               </p>
               {activeTab === 'saved' && (
                 <button
-                  onClick={() => setActiveTab('suggested')}
+                  onClick={() => handleTabChange('suggested')}
                   className="mt-4 text-sm text-blue-600 font-medium hover:text-blue-700"
                 >
                   View suggested tenders →
@@ -441,7 +582,7 @@ export default function DashboardPage() {
           {profile && (
             <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
               <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center flex-shrink-0">
+                <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shrink-0">
                   <span className="text-white font-bold text-base">
                     {profile.company_name.charAt(0)}
                   </span>

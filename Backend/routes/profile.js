@@ -4,7 +4,7 @@ const { requireFromDeps } = require('../lib/deps')
 const express = requireFromDeps('express')
 const multer = requireFromDeps('multer')
 const { callGemini, cleanJSON, extractFromDocument } = require('../lib/gemini')
-const { saveProfile, getProfileById } = require('../lib/store')
+const { saveProfile, getProfileById, setUserProfileId } = require('../lib/store')
 const {
   PROFILE_DOCUMENT_DEFINITIONS,
   markDocumentUploaded,
@@ -107,6 +107,12 @@ router.post('/', upload.fields(uploadFields), async (req, res) => {
     const profile = prepareProfileForSave(await applyUploadedDocuments(profile_id, baseProfile, uploadedFiles))
 
     await saveProfile(profile_id, profile)
+
+    const { user_id } = req.body
+    if (user_id) {
+      await setUserProfileId(user_id, profile_id)
+    }
+
     res.json({ profile_id, profile: buildProfileResponse(profile) })
   } catch (err) {
     console.error('Profile error:', err)

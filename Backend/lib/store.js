@@ -20,6 +20,7 @@ let storageMode = 'memory'
 const memoryProfiles = new Map()
 const memoryTenderWorkflows = new Map()
 const memoryDrafts = new Map()
+const memoryUsers = new Map()
 
 function workflowKey(profileId, tenderId) {
   return `${profileId}::${tenderId}`
@@ -165,6 +166,51 @@ async function listDrafts(profileId) {
   return docs.map(stripInternalFields)
 }
 
+async function saveUser(user) {
+  const database = await connect()
+  const record = { ...user, updatedAt: new Date() }
+
+  if (database) {
+    await database.collection('users').replaceOne(
+      { email: user.email },
+      record,
+      { upsert: true }
+    )
+    return
+  }
+
+  memoryUsers.set(user.email, record)
+}
+
+async function getUserByEmail(email) {
+  const database = await connect()
+  const doc = database
+    ? await database.collection('users').findOne({ email })
+    : memoryUsers.get(email)
+
+  if (!doc) return null
+  return doc
+}
+
+async function setUserProfileId(userId, profileId) {
+  const database = await connect()
+
+  if (database) {
+    await database.collection('users').updateOne(
+      { user_id: userId },
+      { $set: { profile_id: profileId, updatedAt: new Date() } }
+    )
+    return
+  }
+
+  for (const [email, user] of memoryUsers.entries()) {
+    if (user.user_id === userId) {
+      memoryUsers.set(email, { ...user, profile_id: profileId })
+      break
+    }
+  }
+}
+
 function getStorageMode() {
   return storageMode
 }
@@ -179,5 +225,8 @@ module.exports = {
   saveDraft,
   getDraft,
   listDrafts,
+  saveUser,
+  getUserByEmail,
+  setUserProfileId,
   getStorageMode,
 }
