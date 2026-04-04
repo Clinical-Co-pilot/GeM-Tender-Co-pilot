@@ -16,7 +16,12 @@ const draftRoutes = require('./routes/drafts')
 
 const app = express()
 
-app.use(cors())
+app.use(cors({
+  origin: [
+    'http://localhost:3000',
+    'https://gem-tender-co-pilot.vercel.app'
+  ]
+}))
 app.use(express.json())
 
 app.get('/health', async (req, res) => {
